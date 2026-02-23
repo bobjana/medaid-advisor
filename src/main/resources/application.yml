@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: med-aid-asviror
+
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/medaid_poc
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  # Spring AI Configuration
+  ai:
+    # For local Ollama, point to local instance
+    openai:
+      api-key: ${OLLAMA_API_KEY:dummy-key-for-ollama}
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434/v1}
+      chat:
+        enabled: true
+        options:
+          model: ${OLLAMA_MODEL:llama3.2}
+          temperature: 0.7
+      embedding:
+        enabled: true
+        options:
+          model: nomic-embed-text
+
+    # Vector Store (pgvector)
+    vectorstore:
+      pgvector:
+        dimension: 768  # nomic-embed-text dimension
+        index-type: ivfflat
+        distance-type: cosine
+
+  # File upload configuration
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+server:
+  port: 8080
+
+# Logging
+logging:
+  level:
+    cc.zynafin.medaid: DEBUG
+    org.springframework.ai: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# Custom configuration
+medaid:
+  documents:
+    source-path: ${MEDAID_DOCS_PATH:~/Documents/medaids}
+    chunk-size: 1000
+    chunk-overlap: 200
+  scoring:
+    weights:
+      cost: 0.30
+      coverage: 0.40
+      convenience: 0.15
+      risk: 0.15
