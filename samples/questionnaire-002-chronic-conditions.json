@@ -1,0 +1,53 @@
+{
+  "employee": {
+    "firstName": "John",
+    "lastName": "Smith",
+    "age": 45,
+    "dependents": [
+      {
+        "relationship": "child",
+        "age": 12
+      },
+      {
+        "relationship": "child",
+        "age": 8
+      }
+    ],
+    "chronicConditions": [
+      {
+        "condition": "Type 2 Diabetes",
+        "type": "CDL",
+        "severity": "moderate"
+      },
+      {
+        "condition": "Hypertension",
+        "type": "CDL",
+        "severity": "mild"
+      }
+    ],
+    "plannedProcedures": [
+      {
+        "procedure": "Colonoscopy",
+        "urgency": "routine screening",
+        "timeline": "Within 6 months"
+      }
+    ],
+    "familyPlanning": {
+      "currentlyPregnant": false,
+      "planningPregnancy": false,
+      "planningTimeline": "not planning"
+    },
+    "budget": {
+      "maxMonthly": 6500.0,
+      "preferredPayment": "debit order"
+    },
+    "riskTolerance": "LOW",
+    "preferences": {
+      "hospitalPreference": "private hospital",
+      "networkPreference": "prefer non-network",
+      "digitalServices": true
+    }
+  },
+  "questionnaireId": "QNA-002",
+  "submittedAt": "2026-02-23T11:45:00Z"
+}

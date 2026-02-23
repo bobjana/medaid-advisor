@@ -1,0 +1,27 @@
+{
+  "employee": {
+    "firstName": "Emma",
+    "lastName": "Ndlovu",
+    "age": 28,
+    "dependents": [],
+    "chronicConditions": [],
+    "plannedProcedures": [],
+    "familyPlanning": {
+      "currentlyPregnant": false,
+      "planningPregnancy": false,
+      "planningTimeline": "not planning"
+    },
+    "budget": {
+      "maxMonthly": 3000.0,
+      "preferredPayment": "debit order"
+    },
+    "riskTolerance": "HIGH",
+    "preferences": {
+      "hospitalPreference": "any hospital",
+      "networkPreference": "willing to use network",
+      "digitalServices": true
+    }
+  },
+  "questionnaireId": "QNA-003",
+  "submittedAt": "2026-02-23T14:20:00Z"
+}

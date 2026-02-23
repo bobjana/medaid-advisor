@@ -1,4 +1,4 @@
-# MedAid Asviror - RAG + Recommendation Engine POC
+# MedAid Advisor - RAG + Recommendation Engine POC
 
 A Spring Boot + Kotlin proof-of-concept for medical aid recommendations using Retrieval-Augmented Generation (RAG) and a structured scoring algorithm.
 
@@ -90,7 +90,7 @@ ollama serve
 
 ```bash
 # Navigate to project directory
-cd ~/Development/zynafin/med-aid-asviror
+cd ~/Development/zynafin/medaid-advisor
 
 # Build and run
 ./mvnw spring-boot:run

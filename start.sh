@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# MedAid Asviror POC - Quick Start Script
+# MedAid Advisor POC - Quick Start Script
 
 set -e
 

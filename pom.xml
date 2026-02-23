@@ -13,9 +13,9 @@
     </parent>
 
     <groupId>cc.zynafin</groupId>
-    <artifactId>med-aid-asviror</artifactId>
+    <artifactId>medaid-advisor</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <name>MedAid Asviror</name>
+    <name>MedAid Advisor</name>
     <description>RAG + Recommendation Engine for Medical Aid Advisory</description>
 
     <properties>

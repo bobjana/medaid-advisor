@@ -1,0 +1,36 @@
+{
+  "employee": {
+    "firstName": "Sarah",
+    "lastName": "Johnson",
+    "age": 32,
+    "dependents": [
+      {
+        "relationship": "spouse",
+        "age": 35
+      },
+      {
+        "relationship": "child",
+        "age": 5
+      }
+    ],
+    "chronicConditions": [],
+    "plannedProcedures": [],
+    "familyPlanning": {
+      "currentlyPregnant": false,
+      "planningPregnancy": true,
+      "planningTimeline": "Within 12 months"
+    },
+    "budget": {
+      "maxMonthly": 5500.0,
+      "preferredPayment": "debit order"
+    },
+    "riskTolerance": "MEDIUM",
+    "preferences": {
+      "hospitalPreference": "private hospital",
+      "networkPreference": "willing to use network",
+      "digitalServices": true
+    }
+  },
+  "questionnaireId": "QNA-001",
+  "submittedAt": "2026-02-23T10:30:00Z"
+}
