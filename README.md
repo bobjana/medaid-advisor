@@ -36,10 +36,22 @@ This POC demonstrates:
 
 1. **Java 21+**
 2. **Maven 3.8+**
-3. **PostgreSQL 15+** with pgvector extension
-4. **Ollama** (optional, for local LLM)
+3. **Docker & Docker Compose** (for PostgreSQL and Ollama)
 
-### Setup
+### Option 1: One-Command Start (Recommended!)
+
+```bash
+cd ~/Development/zynafin/med-aid-asviror
+./start.sh
+```
+
+This script will:
+- Start PostgreSQL with pgvector extension
+- Start Ollama with pre-pulled models (llama3.2, nomic-embed-text)
+- Set up the database
+- Build and run the Spring Boot application
+
+### Option 2: Manual Setup
 
 #### 1. Install PostgreSQL with pgvector
 
@@ -158,6 +170,20 @@ GET /api/v1/plans/schemes
 ```
 
 ## 🧪 Testing
+
+### Load Sample Data
+
+The POC includes sample medical aid plans for testing:
+
+```bash
+# Load sample plans into database
+docker exec -i medaid-postgres psql -U postgres -d medaid_poc < src/main/resources/data/sample-plans.sql
+```
+
+This will add:
+- 6 medical aid plans (Discovery Health, Bonitas, Bestmed)
+- Copayment structures
+- Benefit details
 
 ### 1. Ingest Documents First
 
