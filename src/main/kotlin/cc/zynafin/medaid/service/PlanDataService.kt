@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.UUID
 import java.util.regex.Pattern
 
 @Service
@@ -27,7 +28,7 @@ open class PlanDataService(
      * Parse contribution tables from PDF and update plan
      */
     @Transactional
-    open fun parseAndStoreContributions(pdfPath: String, planId: String): ContributionParseResult {
+    open fun parseAndStoreContributions(pdfPath: String, planId: UUID): ContributionParseResult {
         val plan = planRepository.findById(planId).orElseThrow {
             IllegalArgumentException("Plan not found: $planId")
         }
@@ -59,7 +60,7 @@ open class PlanDataService(
      * Parse hospital benefit limits from PDF and update plan
      */
     @Transactional
-    open fun parseAndStoreHospitalBenefits(pdfPath: String, planId: String): HospitalBenefitParseResult {
+    open fun parseAndStoreHospitalBenefits(pdfPath: String, planId: UUID): HospitalBenefitParseResult {
         val plan = planRepository.findById(planId).orElseThrow {
             IllegalArgumentException("Plan not found: $planId")
         }
@@ -225,7 +226,7 @@ open class PlanDataService(
         if (keywords.none { lowerLine.contains(it) }) return null
 
         // Pattern: R 1234.56 or R 1,234.56
-        val amountPattern = Pattern.compile("""R\s*(\d+[,.\d]*)\d*""")
+        val amountPattern = Pattern.compile("""R\s*(\d+[,\.\d]*)\d*""")
         val matcher = amountPattern.matcher(line)
 
         if (matcher.find()) {
@@ -246,7 +247,7 @@ open class PlanDataService(
      */
     private fun extractLimitAmount(line: String): LimitInfo? {
         // Pattern: R 1,000,000 per family or R 200,000 p/a
-        val limitPattern = Pattern.compile("""R\s*(\d+[,.\d]*)\d*\s*(per\s+(family|person|p[/a])?)""")
+        val limitPattern = Pattern.compile("""R\s*(\d+[,\.\d]*)\d*\s*(per\s+(family|person|p[/a])?)""")
         val matcher = limitPattern.matcher(line)
 
         if (matcher.find()) {
@@ -275,7 +276,7 @@ open class PlanDataService(
     private fun extractBenefitName(line: String): String {
         // Remove numeric values and limit indicators
         return line
-            .replace("""R\s*\d+[,.\d]*\d*""".toRegex(), "")
+            .replace("""R\s*\d+[,\.\d]*\d*""".toRegex(), "")
             .replace("""per\s+(family|person|p[/a])""".toRegex(), "")
             .replace("""\s+""".toRegex(), " ")
             .trim()
@@ -294,14 +295,14 @@ open class PlanDataService(
 
 data class ContributionParseResult(
     val success: Boolean,
-    val planId: String,
+    val planId: UUID,
     val contributionsExtracted: Int,
     val contributions: List<Contribution> = emptyList()
 )
 
 data class HospitalBenefitParseResult(
     val success: Boolean,
-    val planId: String,
+    val planId: UUID,
     val benefitsExtracted: Int,
     val benefits: List<HospitalBenefit> = emptyList()
 )

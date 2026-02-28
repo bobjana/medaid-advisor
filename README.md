@@ -36,67 +36,83 @@ This POC demonstrates:
 
 1. **Java 21+**
 2. **Maven 3.8+**
-3. **Docker & Docker Compose** (for PostgreSQL and Ollama)
+3. **[just](https://github.com/casey/just)** task runner (`brew install just`)
+4. **Docker & Docker Compose** (for PostgreSQL and Ollama)
 
-### Option 1: One-Command Start (Recommended!)
+### Option 1: Using Just (Recommended!)
 
 ```bash
-cd ~/Development/zynafin/med-aid-asviror
-./start.sh
-```
+# See all available commands
+just
 
-This script will:
-- Start PostgreSQL with pgvector extension
-- Start Ollama with pre-pulled models (llama3.2, nomic-embed-text)
-- Set up the database
-- Build and run the Spring Boot application
+# Start everything (DB + Ollama + App)
+just dev
+
+# Or step by step:
+just db-up       # Start PostgreSQL and Ollama
+just build       # Build the project
+just ingest-all  # Ingest plans and RAG data
+just run         # Run the application
+```
 
 ### Option 2: Manual Setup
 
-#### 1. Install PostgreSQL with pgvector
+#### 1. Start Infrastructure
 
 ```bash
-# macOS
-brew install postgresql@16
-brew install pgvector
+# Start PostgreSQL and Ollama
+docker compose up -d
 
-# Start PostgreSQL
-brew services start postgresql@16
-
-# Create database
-createdb medaid_poc
-
-# Enable pgvector extension
-psql medaid_poc
-psql> CREATE EXTENSION vector;
-psql> \q
+# Wait for PostgreSQL and create database
+docker exec medaid-postgres psql -U postgres -c "CREATE DATABASE medaid_poc;"
+docker exec medaid-postgres psql -U postgres -d medaid_poc -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-#### 2. Install Ollama (for local LLM)
+#### 2. Build and Run
 
 ```bash
-# macOS
-brew install ollama
+# Build
+mvn clean install -DskipTests
 
-# Pull models
-ollama pull llama3.2
-ollama pull nomic-embed-text
+# Ingest plan data from PDFs (idempotent - safe to run multiple times)
+java -jar target/medaid-advisor-*.jar --ingest-plan-data
 
-# Start Ollama
-ollama serve
-```
-
-#### 3. Run the Application
-
-```bash
-# Navigate to project directory
-cd ~/Development/zynafin/medaid-advisor
-
-# Build and run
-./mvnw spring-boot:run
+# Run the application
+java -jar target/medaid-advisor-*.jar
 ```
 
 The API will be available at `http://localhost:8080`
+
+## 📋 Available Just Commands
+
+### Development
+| Command | Description |
+|---------|-------------|
+| `just dev` | Start full dev environment |
+| `just build` | Build the project |
+| `just test` | Run all tests |
+| `just run` | Run the application |
+
+### Database
+| Command | Description |
+|---------|-------------|
+| `just db-up` | Start PostgreSQL and Ollama |
+| `just db-down` | Stop database services |
+| `just db-reset` | Reset database (drops and recreates) |
+
+### Ingestion
+| Command | Description |
+|---------|-------------|
+| `just ingest-plans` | Ingest plan data from PDFs |
+| `just ingest-rag` | Ingest RAG documents |
+| `just ingest-all` | Ingest both plans and RAG |
+
+### Testing & Utilities
+| Command | Description |
+|---------|-------------|
+| `just health` | Check API health |
+| `just docs` | Show API documentation |
+| `just db-console` | Open PostgreSQL console |
 
 ## 📚 API Endpoints
 
@@ -169,59 +185,79 @@ GET /api/v1/plans/{id}
 GET /api/v1/plans/schemes
 ```
 
+## 🗄️ Database Schema
+
+The database schema is managed by **Flyway** migrations:
+
+- Migrations are in `src/main/resources/db/migration/`
+- Schema is version controlled via SQL files
+- On startup, Flyway automatically applies pending migrations
+- Hibernate validates schema (`ddl-auto: validate`)
+
+### Key Tables
+
+- **plans** - Medical aid plan information
+- **contributions** - Detailed contribution data by member type
+- **hospital_benefits** - Hospital benefit coverage details
+- **plan_benefits** - Key-value benefit information
+- **plan_copayments** - Copayment structures
+
 ## 🧪 Testing
 
-### Load Sample Data
-
-The POC includes sample medical aid plans for testing:
-
+### Run Tests
 ```bash
-# Load sample plans into database
-docker exec -i medaid-postgres psql -U postgres -d medaid_poc < src/main/resources/data/sample-plans.sql
+just test
 ```
 
-This will add:
-- 6 medical aid plans (Discovery Health, Bonitas, Bestmed)
-- Copayment structures
-- Benefit details
-
-### 1. Ingest Documents First
-
+### Test Ingestion
 ```bash
-# Start the app
-./mvnw spring-boot:run
-
-# Ingest your medical aid PDFs
-curl -X POST http://localhost:8080/api/v1/rag/ingest-directory \
-  -H "Content-Type: application/json" \
-  -d '{"directoryPath": "~/Documents/medaids"}'
+just test-ingestion
 ```
 
-### 2. Test RAG Search
-
+### Quick API Test
 ```bash
-# Search for benefits
-curl "http://localhost:8080/api/v1/rag/search?query=chronic disease coverage&topK=3"
+just health
 ```
 
-### 3. Test Recommendations
+## 📄 Data Ingestion Workflow
+
+The ingestion pipeline is **idempotent** - you can run it multiple times safely.
+
+### Plan Data Ingestion
+
+Plan data is extracted directly from PDFs in `data/plans/`:
 
 ```bash
-# Generate recommendations for a sample profile
-curl -X POST http://localhost:8080/api/v1/recommendations \
-  -H "Content-Type: application/json" \
-  -d '{
-    "employeeProfile": {
-      "age": 32,
-      "dependents": 1,
-      "chronicConditions": ["Hypertension"],
-      "planningPregnancy": false,
-      "maxMonthlyBudget": 4000.0,
-      "riskTolerance": "MEDIUM"
-    },
-    "maxRecommendations": 3
-  }'
+# Ingest all plans from PDFs
+just ingest-plans
+
+# Or manually:
+java -jar target/medaid-advisor-*.jar --ingest-plan-data
 ```
+
+This will:
+1. Scan all PDFs in `data/plans/`
+2. Extract scheme, plan name, and year from filenames
+3. Create new plans or update existing ones (based on scheme+name+year)
+4. Extract contribution tables and hospital benefits from PDF content
+
+### RAG Document Ingestion
+
+For semantic search capabilities:
+
+```bash
+# Ingest RAG documents
+just ingest-rag
+
+# Or manually:
+java -jar target/medaid-advisor-*.jar --ingest-data
+```
+
+This will:
+1. Parse PDFs and extract text
+2. Split into chunks (800 chars with 100 overlap)
+3. Generate embeddings using nomic-embed-text
+4. Store in pgvector for semantic search
 
 ## 🔧 Configuration
 
@@ -234,21 +270,28 @@ spring:
     username: postgres
     password: postgres
 
+  jpa:
+    hibernate:
+      ddl-auto: validate  # Schema managed by Flyway
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
   ai:
     openai:
-      base-url: http://localhost:11434/v1  # Ollama
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}/v1
       chat:
         options:
-          model: llama3.2
+          model: ${OLLAMA_MODEL:llama3.2}
       embedding:
         options:
           model: nomic-embed-text
 
 medaid:
   documents:
-    source-path: ~/Documents/medaids
-    chunk-size: 1000
-    chunk-overlap: 200
+    chunk-size: 800
+    chunk-overlap: 100
   scoring:
     weights:
       cost: 0.30
@@ -273,7 +316,7 @@ The engine scores plans based on 4 factors:
 ### 2. RAG Pipeline
 
 - **Document Parsing**: Extract text from PDFs
-- **Chunking**: Split into 1000-character chunks with 200 overlap
+- **Chunking**: Split into 800-character chunks with 100 overlap
 - **Embedding**: Convert to vectors (768 dimensions)
 - **Storage**: Store in pgvector with metadata
 - **Retrieval**: Semantic search for relevant chunks
@@ -298,15 +341,22 @@ src/main/kotlin/cc/zynafin/medaid/
 │   └── PlanController.kt             # Plans API
 ├── domain/
 │   ├── Plan.kt                       # Medical aid plan entity
+│   ├── Contribution.kt               # Contribution data
 │   ├── EmployeeProfile.kt            # Employee profile entity
 │   └── Recommendation.kt            # Recommendation DTOs
 ├── repository/
 │   ├── PlanRepository.kt            # Plan data access
+│   ├── ContributionRepository.kt    # Contribution data access
 │   └── EmployeeProfileRepository.kt # Profile data access
 └── service/
     ├── RecommendationEngine.kt       # Scoring algorithm
+    ├── BatchPlanIngestionService.kt  # Plan data ingestion
+    ├── PlanDataService.kt           # PDF data extraction
     ├── RagService.kt                # RAG pipeline
     └── LlmService.kt                 # LLM integration
+
+src/main/resources/db/migration/
+└── V1__Initial_schema.sql           # Database schema
 ```
 
 ## 🔮 Next Steps
@@ -344,10 +394,13 @@ To move from POC to production:
 
 ```bash
 # Check PostgreSQL is running
-brew services list | grep postgres
+docker compose ps
 
 # View PostgreSQL logs
-tail -f /usr/local/var/log/postgresql@16.log
+just db-logs
+
+# Reset database
+just db-reset
 ```
 
 ### Ollama Not Responding
@@ -356,21 +409,27 @@ tail -f /usr/local/var/log/postgresql@16.log
 # Check Ollama is running
 curl http://localhost:11434/api/tags
 
-# View Ollama logs
-ollama logs
+# Restart Ollama
+docker compose restart ollama
 ```
 
 ### pgvector Extension Not Found
 
 ```bash
-# Connect to database
-psql medaid_poc
+# Connect to database and create extension
+docker exec -it medaid-postgres psql -U postgres -d medaid_poc
+db> CREATE EXTENSION IF NOT EXISTS vector;
+db> \dx
+```
 
-# Install extension
-CREATE EXTENSION IF NOT EXISTS vector;
+### Ingestion Issues
 
-# Verify
-\dx
+```bash
+# Check if plans were created
+curl http://localhost:8080/api/v1/plans
+
+# Re-run ingestion (idempotent)
+just ingest-plans
 ```
 
 ## 📄 License

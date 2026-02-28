@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.support.TransactionTemplate
 import java.io.File
+import java.util.UUID
 import kotlin.runCatching
 
 @SpringBootTest(classes = [cc.zynafin.medaid.TestApplication::class])
@@ -38,7 +39,7 @@ class PlanDataServiceIntegrationTest {
     @Autowired
     private lateinit var transactionTemplate: TransactionTemplate
 
-    private var testPlanId: String = "test-plan-1"
+    private lateinit var testPlanId: UUID
 
     @BeforeEach
     fun setup() {
@@ -49,6 +50,7 @@ class PlanDataServiceIntegrationTest {
             planRepository.deleteAll()
 
             // Create a test plan
+            testPlanId = UUID.randomUUID()
             val testPlan = Plan(
                 id = testPlanId,
                 scheme = "Discovery Health",
@@ -131,7 +133,7 @@ class PlanDataServiceIntegrationTest {
     fun `should handle invalid plan ID gracefully`() {
         val pdfPath = "data/plans/Beat 1 Product brochure 2026.pdf"
 
-        val result = runCatching { planDataService.parseAndStoreContributions(pdfPath, "non-existent-plan-id") }
+        val result = runCatching { planDataService.parseAndStoreContributions(pdfPath, UUID.randomUUID()) }
 
         assertNotNull(result)
         assertFalse(result.isSuccess)

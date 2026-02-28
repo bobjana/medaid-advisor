@@ -2,6 +2,7 @@ package cc.zynafin.medaid.domain
 
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import java.util.UUID
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 
@@ -10,7 +11,7 @@ class RecommendationTest {
     @Test
     fun `should create recommendation with all fields`() {
         val plan = Plan(
-            id = "test-plan",
+            id = UUID.randomUUID(),
             scheme = "Discovery Health",
             planName = "Saver Plan",
             planYear = 2026,

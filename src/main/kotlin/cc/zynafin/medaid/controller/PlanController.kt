@@ -6,6 +6,8 @@ import cc.zynafin.medaid.service.BatchPlanIngestionService
 import cc.zynafin.medaid.service.BatchIngestionResult
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import java.util.UUID
+
 @RestController
 @RequestMapping("/api/v1/plans")
 class PlanController(
@@ -26,12 +28,11 @@ class PlanController(
             else ->
                 planRepository.findByPlanYear(2026)
         }
-
         return ResponseEntity.ok(plans)
     }
 
     @GetMapping("/{id}")
-    fun getPlanById(@PathVariable id: String): ResponseEntity<Plan> {
+    fun getPlanById(@PathVariable id: UUID): ResponseEntity<Plan> {
         val plan = planRepository.findById(id)
         return if (plan.isPresent) {
             ResponseEntity.ok(plan.get())
@@ -56,5 +57,4 @@ class PlanController(
         val result = batchPlanIngestionService.ingestDirectory(directoryPath)
         return ResponseEntity.ok(result)
     }
-
 }

@@ -4,14 +4,78 @@
 
 This is a Maven-based Spring Boot 3.2.5 + Kotlin 1.9.23 project. Java 21 is required.
 
+We use [just](https://github.com/casey/just) as the task runner for common development tasks.
+
+### Just Commands (Recommended)
+
+| Command | Description |
+|---------|-------------|
+| `just` | Show all available commands |
+| `just dev` | Start full development environment (DB + Ollama + App) |
+| `just build` | Build the project |
+| `just test` | Run all tests |
+| `just run` | Run the application |
+| `just ingest-plans` | Ingest plan data from PDFs |
+| `just ingest-all` | Ingest both plans and RAG data |
+| `just db-up` | Start PostgreSQL and Ollama |
+| `just db-down` | Stop database services |
+| `just db-reset` | Reset database (drop and recreate) |
+| `just health` | Check API health |
+| `just docs` | Show API documentation |
+
+### Maven Commands (Alternative)
+
 - **Full build**: `mvn clean install`
-- **Run application**: `./start.sh` (downloads Maven wrapper if needed)
 - **Run all tests**: `mvn test`
 - **Run single test class**: `mvn test -Dtest=ClassName` (e.g., `mvn test -Dtest=RecommendationEngineTest`)
 - **Run single test method**: `mvn test -Dtest=ClassName#methodName`
 - **Run with profile**: `mvn test -Dspring.profiles.active=test`
 
-No lint tools are currently configured. Add ktlint or detekt if needed.
+### Legacy Scripts
+
+Scripts are located in `infra/scripts/`:
+- `start.sh` - Start PostgreSQL, Ollama, and the application
+- `test-ingestion.sh` - Test ingestion functionality
+
+## Development Workflow
+
+### First Time Setup
+
+```bash
+# 1. Start infrastructure (PostgreSQL + Ollama)
+just db-up
+
+# 2. Build the project
+just build
+
+# 3. Ingest plan data from PDFs
+just ingest-plans
+
+# 4. Run the application
+just run
+```
+
+### Daily Development
+
+```bash
+# Quick start everything
+just dev
+
+# Or step by step:
+just db-up      # Start databases
+just build      # Build project
+just run        # Run app (in another terminal)
+just ingest-plans  # Ingest/update plans
+```
+
+### Database Migrations
+
+We use **Flyway** for database schema management:
+
+- Migrations are in `src/main/resources/db/migration/`
+- Schema is version controlled via SQL files
+- Hibernate validates schema on startup (`ddl-auto: validate`)
+- Run `just db-reset` to completely reset the database
 
 ## Code Style Guidelines
 
@@ -87,7 +151,9 @@ Test profile uses H2 in-memory database via `application-test.yml`.
 
 ## Key Project Notes
 
-- Database: PostgreSQL in production, H2 for tests
-- RAG ingestion: PDFs stored in `data/plans/`, chunked via RagService
-- Vector DB: Verify ingestion via RagService methods
-- No mvnw wrapper - start.sh downloads it
+- **Database**: PostgreSQL in production, H2 for tests
+- **Migrations**: Flyway manages schema, migrations in `db/migration/`
+- **RAG ingestion**: PDFs stored in `data/plans/`, chunked via RagService
+- **Vector DB**: pgvector extension for semantic search
+- **Ingestion**: Pipeline is idempotent - run multiple times safely
+- **No mvnw wrapper** - use system Maven or install wrapper

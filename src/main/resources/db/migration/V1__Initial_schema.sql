@@ -4,16 +4,13 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Plan Types Enum
-CREATE TYPE plan_type AS ENUM ('NETWORK', 'COMPREHENSIVE', 'SAVINGS', 'HOSPITAL', 'CAP');
-
 -- Plans table
 CREATE TABLE plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     scheme VARCHAR(255) NOT NULL,
     plan_name VARCHAR(255) NOT NULL,
     plan_year INTEGER NOT NULL,
-    plan_type plan_type NOT NULL,
+    plan_type VARCHAR(255) NOT NULL,
     principal_contribution DOUBLE PRECISION NOT NULL,
     adult_dependent_contribution DOUBLE PRECISION,
     child_dependent_contribution DOUBLE PRECISION,
@@ -43,19 +40,15 @@ CREATE TABLE plan_copayments (
     PRIMARY KEY (plan_id, copayment_key)
 );
 
--- Risk Tolerance Enum
-CREATE TYPE risk_tolerance AS ENUM ('LOW', 'MEDIUM', 'HIGH');
-
 -- Employee profiles table
 CREATE TABLE employee_profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     age INTEGER NOT NULL CHECK (age >= 18 AND age <= 100),
     dependents INTEGER DEFAULT 0 CHECK (dependents >= 0 AND dependents <= 20),
-    planned_procedures TEXT,
     planning_pregnancy BOOLEAN DEFAULT FALSE,
     max_monthly_budget DOUBLE PRECISION,
     max_annual_budget DOUBLE PRECISION,
-    risk_tolerance risk_tolerance DEFAULT 'MEDIUM'
+    risk_tolerance VARCHAR(255) DEFAULT 'MEDIUM'
 );
 
 -- Chronic conditions (ElementCollection)
@@ -63,6 +56,13 @@ CREATE TABLE chronic_conditions (
     profile_id UUID NOT NULL REFERENCES employee_profiles(id) ON DELETE CASCADE,
     condition_type VARCHAR(255) NOT NULL,
     PRIMARY KEY (profile_id, condition_type)
+);
+
+-- Planned procedures (ElementCollection)
+CREATE TABLE planned_procedures (
+    profile_id UUID NOT NULL REFERENCES employee_profiles(id) ON DELETE CASCADE,
+    procedure_name VARCHAR(255) NOT NULL,
+    PRIMARY KEY (profile_id, procedure_name)
 );
 
 -- Preferred providers (ElementCollection)
@@ -73,24 +73,11 @@ CREATE TABLE preferred_providers (
     PRIMARY KEY (profile_id, provider_type)
 );
 
--- Member Type Enum
-CREATE TYPE member_type AS ENUM (
-    'PRINCIPAL', 'SPOUSE', 'CHILD_FIRST', 'CHILD_SECOND', 
-    'CHILD_THIRD', 'CHILD_FOURTH', 'CHILD_FIFTH_OR_MORE'
-);
-
--- Benefit Category Enum
-CREATE TYPE benefit_category AS ENUM (
-    'HOSPITAL_COVER', 'CHRONIC_MEDICINE', 'SPECIALIST_CONSULTATION', 
-    'EMERGENCY_SERVICE', 'MATERNITY', 'DENTAL', 'OPTICAL', 
-    'PRESCRIBED_MINIMUM_BENEFITS'
-);
-
 -- Contributions table
 CREATE TABLE contributions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    member_type member_type NOT NULL,
+    member_type VARCHAR(255) NOT NULL,
     monthly_amount DOUBLE PRECISION NOT NULL,
     age_bracket VARCHAR(50),
     conditions VARCHAR(2000)
@@ -103,7 +90,7 @@ CREATE INDEX idx_contributions_plan_member_type ON contributions(plan_id, member
 CREATE TABLE hospital_benefits (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    category benefit_category NOT NULL,
+    category VARCHAR(255) NOT NULL,
     benefit_name VARCHAR(500) NOT NULL,
     limit_per_family VARCHAR(500),
     limit_per_person VARCHAR(500),

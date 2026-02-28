@@ -8,28 +8,29 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.util.UUID
 
 @Repository
-interface ContributionRepository : JpaRepository<Contribution, String> {
+interface ContributionRepository : JpaRepository<Contribution, UUID> {
 
-    fun findByPlanId(planId: String): List<Contribution>
+    fun findByPlanId(planId: UUID): List<Contribution>
 
-    fun findByPlanIdAndMemberType(planId: String, memberType: MemberType): Contribution?
+    fun findByPlanIdAndMemberType(planId: UUID, memberType: MemberType): Contribution?
 
     @Query("""
         SELECT c FROM Contribution c
         WHERE c.plan.id = :planId
         ORDER BY c.memberType
     """)
-    fun findByPlanIdOrderByMemberType(@Param("planId") planId: String): List<Contribution>
+    fun findByPlanIdOrderByMemberType(@Param("planId") planId: UUID): List<Contribution>
 }
 
 @Repository
-interface HospitalBenefitRepository : JpaRepository<HospitalBenefit, String> {
+interface HospitalBenefitRepository : JpaRepository<HospitalBenefit, UUID> {
 
-    fun findByPlanId(planId: String): List<HospitalBenefit>
+    fun findByPlanId(planId: UUID): List<HospitalBenefit>
 
-    fun findByPlanIdAndCategory(planId: String, category: BenefitCategory): List<HospitalBenefit>
+    fun findByPlanIdAndCategory(planId: UUID, category: BenefitCategory): List<HospitalBenefit>
 
     @Query("""
         SELECT hb FROM HospitalBenefit hb
@@ -37,5 +38,5 @@ interface HospitalBenefitRepository : JpaRepository<HospitalBenefit, String> {
         AND hb.covered = true
         ORDER BY hb.category
     """)
-    fun findCoveredBenefitsByPlanId(@Param("planId") planId: String): List<HospitalBenefit>
+    fun findCoveredBenefitsByPlanId(@Param("planId") planId: UUID): List<HospitalBenefit>
 }

@@ -1,6 +1,7 @@
 package cc.zynafin.medaid.domain
 
 import jakarta.persistence.*
+import java.util.UUID
 
 /**
  * Member type for contribution tables
@@ -37,7 +38,7 @@ enum class BenefitCategory {
 data class Contribution(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: String? = null,
+    val id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "plan_id", nullable = false)
@@ -65,7 +66,7 @@ data class Contribution(
 data class HospitalBenefit(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: String? = null,
+    val id: UUID? = null,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "plan_id", nullable = false)

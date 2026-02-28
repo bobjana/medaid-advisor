@@ -2,13 +2,14 @@ package cc.zynafin.medaid.domain
 
 import jakarta.persistence.*
 import java.time.LocalDate
+import java.util.UUID
 
 @Entity
 @Table(name = "plans")
 class Plan(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: String? = null,
+    val id: UUID? = null,
 
     @Column(nullable = false)
     val scheme: String,

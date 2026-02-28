@@ -2,12 +2,14 @@ package cc.zynafin.medaid.domain
 
 import jakarta.persistence.*
 import jakarta.validation.constraints.*
+import java.util.UUID
+
 @Entity
 @Table(name = "employee_profiles")
 data class EmployeeProfile(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    val id: String? = null,
+    val id: UUID? = null,
 
     @Column(nullable = false)
     @field:Min(value = 18, message = "Age must be at least 18")
@@ -23,6 +25,9 @@ data class EmployeeProfile(
     @Column(name = "condition_type")
     val chronicConditions: List<String> = listOf(),
 
+    @ElementCollection
+    @CollectionTable(name = "planned_procedures", joinColumns = [JoinColumn(name = "profile_id")])
+    @Column(name = "procedure_name")
     val plannedProcedures: List<String> = listOf(),
 
     val planningPregnancy: Boolean = false,

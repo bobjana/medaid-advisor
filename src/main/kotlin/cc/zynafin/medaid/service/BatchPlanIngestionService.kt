@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
+import java.util.UUID
 
 @Service
 open class BatchPlanIngestionService(
@@ -274,7 +275,7 @@ data class BatchItemResult(
     val filename: String,
     val status: BatchItemStatus,
     val message: String,
-    val planId: String?,
+    val planId: UUID?,
     val planName: String? = null,
     val planYear: Int? = null,
     val contributionsExtracted: Int = 0,
