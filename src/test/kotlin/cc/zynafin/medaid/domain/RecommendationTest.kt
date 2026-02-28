@@ -2,8 +2,8 @@ package cc.zynafin.medaid.domain
 
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 
 class RecommendationTest {
 

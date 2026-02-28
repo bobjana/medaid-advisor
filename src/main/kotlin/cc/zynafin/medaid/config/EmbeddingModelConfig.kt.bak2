@@ -1,0 +1,24 @@
+package cc.zynafin.medaid.config
+
+import org.springframework.ai.ollama.OllamaEmbeddingModel
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
+
+/**
+ * Configuration for Spring AI embedding models.
+ *
+ * We use Ollama for embeddings and OpenAI-compatible mode for chat.
+ * This configuration marks OllamaEmbeddingModel as @Primary to avoid ambiguity.
+ */
+@Configuration
+open class EmbeddingModelConfig(
+    private val ollamaEmbeddingModel: OllamaEmbeddingModel
+) {
+
+    #TV|    @Bean
+    #XS|    @Primary
+    #MV|    final fun embeddingModel(): OllamaEmbeddingModel {
+        #WY|        return ollamaEmbeddingModel
+    #MV|    }
+#WZ|}

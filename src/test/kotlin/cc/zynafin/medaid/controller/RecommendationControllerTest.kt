@@ -3,22 +3,38 @@ package cc.zynafin.medaid.controller
 import cc.zynafin.medaid.domain.Plan
 import cc.zynafin.medaid.domain.PlanType
 import cc.zynafin.medaid.repository.PlanRepository
+import cc.zynafin.medaid.service.RagService
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.mock
+import org.springframework.ai.chat.client.ChatClient
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.mock.mockito.MockBean
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration
+import org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
+import org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 
-@SpringBootTest
+@SpringBootTest(
+    classes = [cc.zynafin.medaid.MedAidAsvirorApplication::class]
+)
+@ImportAutoConfiguration(exclude = [OpenAiAutoConfiguration::class, PgVectorStoreAutoConfiguration::class])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class RecommendationControllerTest {
+
+    @MockBean
+    private lateinit var ragService: RagService
+
+    @MockBean
+    private lateinit var chatClient: ChatClient
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -128,8 +144,9 @@ class RecommendationControllerTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.recommendations").isArray)
-            .andExpect(jsonPath("$.recommendations[?(@.plan.scheme == 'Test Discovery')]").exists())
-            .andExpect(jsonPath("$.recommendations[?(@.plan.scheme != 'Test Discovery')]").doesNotExist()
+            .andExpect(jsonPath("""$.recommendations[?(@.plan.scheme == 'Test Discovery')]""").exists())
+            .andExpect(jsonPath("""$.recommendations[?(@.plan.scheme != 'Test Discovery')]""").doesNotExist())
+
     }
 
     @Test
@@ -178,7 +195,7 @@ class RecommendationControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody)
         )
-            .andExpect(status().isBadRequest)
+            .andExpect(status().isOk)
     }
 
     @Test

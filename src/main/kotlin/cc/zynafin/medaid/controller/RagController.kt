@@ -1,7 +1,6 @@
 package cc.zynafin.medaid.controller
 
-import cc.zynafin.medaid.service.LlmService
-import cc.zynafin.medaid.service.RagService
+import cc.zynafin.medaid.service.*
 import org.springframework.ai.document.Document
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -18,36 +17,21 @@ class RagController(
     fun ingestDocument(
         @RequestParam file: MultipartFile,
         @RequestParam(required = false) metadata: String? = null
-    ): ResponseEntity<Map<String, Any>> {
+    ): ResponseEntity<IngestionResult> {
         val metaMap = if (metadata != null) {
-            // Simple parsing for POC - in production, use proper JSON parsing
             mapOf("custom_metadata" to metadata)
         } else {
             emptyMap()
         }
 
-        ragService.ingestPdf(file, metaMap)
-
-        return ResponseEntity.ok(
-            mapOf(
-                "status" to "success",
-                "filename" to file.originalFilename,
-                "message" to "Document ingested successfully"
-            )
-        )
+        val result = ragService.ingestPdf(file, metaMap)
+        return ResponseEntity.ok(result)
     }
 
     @PostMapping("/ingest-directory")
-    fun ingestDirectory(@RequestBody request: IngestDirectoryRequest): ResponseEntity<Map<String, Any>> {
-        ragService.ingestDirectory(request.directoryPath)
-
-        return ResponseEntity.ok(
-            mapOf(
-                "status" to "success",
-                "directory" to request.directoryPath,
-                "message" to "Directory ingestion started"
-            )
-        )
+    fun ingestDirectory(@RequestBody request: IngestDirectoryRequest): ResponseEntity<DirectoryIngestionResult> {
+        val result = ragService.ingestDirectory(request.directoryPath)
+        return ResponseEntity.ok(result)
     }
 
     @GetMapping("/search")

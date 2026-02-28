@@ -5,7 +5,7 @@ import java.time.LocalDate
 
 @Entity
 @Table(name = "plans")
-data class Plan(
+class Plan(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: String? = null,
@@ -58,7 +58,21 @@ data class Plan(
 
     @Column(length = 2000)
     val sourceDocument: String? = null
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Plan) return false
+        return id == other.id
+    }
+
+    override fun hashCode(): Int {
+        return id?.hashCode() ?: 0
+    }
+
+    override fun toString(): String {
+        return "Plan(id=$id, scheme=$scheme, planName=$planName, planYear=$planYear, planType=$planType)"
+    }
+}
 
 enum class PlanType {
     NETWORK,

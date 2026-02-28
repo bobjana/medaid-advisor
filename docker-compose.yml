@@ -27,7 +27,6 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_KEEP_ALIVE=-1
-    # Auto-pull models on startup
     command: >
       sh -c "
         ollama serve &

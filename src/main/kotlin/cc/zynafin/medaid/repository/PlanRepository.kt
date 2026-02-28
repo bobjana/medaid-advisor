@@ -12,6 +12,8 @@ interface PlanRepository : JpaRepository<Plan, String> {
 
     fun findBySchemeAndPlanYear(scheme: String, planYear: Int): List<Plan>
 
+    fun findByPlanYear(planYear: Int): List<Plan>
+
     fun findByPlanType(planType: PlanType): List<Plan>
 
     @Query("""

@@ -1,7 +1,11 @@
 spring:
   application:
     name: medaid-advisor
-
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
+      - org.springframework.ai.autoconfigure.ollama.OllamaAutoConfiguration
+      - org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
   # Test database - use H2 for faster tests
   datasource:
     url: jdbc:h2:mem:testdb
@@ -18,15 +22,8 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
 
-  # Disable AI services for tests (unless specifically testing RAG)
-  ai:
-    openai:
-      enabled: false
-
-  # Disable LLM in tests
   main:
     allow-bean-definition-overriding: true
-
 server:
   port: 8081
 

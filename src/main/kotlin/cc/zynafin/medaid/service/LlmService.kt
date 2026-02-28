@@ -1,11 +1,10 @@
 package cc.zynafin.medaid.service
 
 import org.slf4j.LoggerFactory
-import org.springframework.ai.chat.ChatClient
-import org.springframework.ai.chat.ChatResponse
-import org.springframework.ai.chat.messages.UserMessage
+import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.prompt.Prompt
-import org.springframework.ai.chat.prompt.SystemPromptTemplate
+import org.springframework.ai.chat.messages.UserMessage
+import org.springframework.ai.chat.messages.SystemMessage
 import org.springframework.stereotype.Service
 
 @Service
@@ -14,29 +13,26 @@ class LlmService(
 ) {
     private val log = LoggerFactory.getLogger(LlmService::class.java)
 
-    /**
-     * Generate a response from the LLM
-     */
     fun generateResponse(userPrompt: String, systemPrompt: String? = null): String {
-        val userMessage = UserMessage(userPrompt)
-
-        val prompt = if (systemPrompt != null) {
-            val systemMessage = SystemPromptTemplate(systemPrompt).create()
-            Prompt(listOf(systemMessage, userMessage))
+        val messages = if (systemPrompt != null) {
+            listOf(SystemMessage(systemPrompt), UserMessage(userPrompt))
         } else {
-            Prompt(listOf(userMessage))
+            listOf(UserMessage(userPrompt))
         }
 
-        val response: ChatResponse = chatClient.call(prompt)
-        val result = response.result.output.content
+        val prompt = Prompt(messages)
 
-        log.debug("Generated LLM response (length: ${result.length})")
-        return result
+        return try {
+            val response = chatClient.prompt(prompt).call().content()
+                ?: "No response generated"
+            log.debug("Generated LLM response (length: ${response.length})")
+            response
+        } catch (e: Exception) {
+            log.error("Error generating LLM response", e)
+            "Error generating response: ${e.message}"
+        }
     }
 
-    /**
-     * Generate explanation for a plan recommendation
-     */
     fun generateRecommendationExplanation(
         employeeSummary: String,
         planName: String,
@@ -76,9 +72,6 @@ class LlmService(
         return generateResponse(userPrompt, systemPrompt)
     }
 
-    /**
-     * Generate comparison between two plans
-     */
     fun generatePlanComparison(
         planADetails: String,
         planBDetails: String,
@@ -110,9 +103,6 @@ class LlmService(
         return generateResponse(userPrompt, systemPrompt)
     }
 
-    /**
-     * Generate explanation for a benefit or term
-     */
     fun explainBenefit(term: String, context: String): String {
         val userPrompt = """
             Explain the medical aid term "$term" in simple language.

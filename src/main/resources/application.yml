@@ -18,12 +18,10 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
-  # Spring AI Configuration
+  # Spring AI Configuration - Ollama only
   ai:
-    # For local Ollama, point to local instance
-    openai:
-      api-key: ${OLLAMA_API_KEY:dummy-key-for-ollama}
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434/v1}
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         enabled: true
         options:
@@ -33,13 +31,13 @@ spring:
         enabled: true
         options:
           model: nomic-embed-text
-
     # Vector Store (pgvector)
     vectorstore:
       pgvector:
         dimension: 768  # nomic-embed-text dimension
         index-type: ivfflat
-        distance-type: cosine
+        distance-type: COSINE_DISTANCE
+        initialize-schema: true
 
   # File upload configuration
   servlet:
@@ -62,8 +60,8 @@ logging:
 medaid:
   documents:
     source-path: ${MEDAID_DOCS_PATH:~/Documents/medaids}
-    chunk-size: 1000
-    chunk-overlap: 200
+    chunk-size: 800
+    chunk-overlap: 100
   scoring:
     weights:
       cost: 0.30

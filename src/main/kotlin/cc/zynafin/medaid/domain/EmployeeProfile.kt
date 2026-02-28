@@ -1,7 +1,7 @@
 package cc.zynafin.medaid.domain
 
 import jakarta.persistence.*
-
+import jakarta.validation.constraints.*
 @Entity
 @Table(name = "employee_profiles")
 data class EmployeeProfile(
@@ -10,8 +10,12 @@ data class EmployeeProfile(
     val id: String? = null,
 
     @Column(nullable = false)
+    @field:Min(value = 18, message = "Age must be at least 18")
+    @field:Max(value = 100, message = "Age must be at most 100")
     val age: Int,
 
+    @field:Min(value = 0, message = "Dependents cannot be negative")
+    @field:Max(value = 20, message = "Dependents cannot exceed 20")
     val dependents: Int = 0,
 
     @ElementCollection
@@ -23,7 +27,10 @@ data class EmployeeProfile(
 
     val planningPregnancy: Boolean = false,
 
+    @field:Positive(message = "Monthly budget must be positive")
     val maxMonthlyBudget: Double? = null,
+
+    @field:Positive(message = "Annual budget must be positive")
     val maxAnnualBudget: Double? = null,
 
     @Enumerated(EnumType.STRING)
