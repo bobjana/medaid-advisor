@@ -1,12 +1,15 @@
 package cc.zynafin.medaid.service
 
 import cc.zynafin.medaid.domain.Plan
+import cc.zynafin.medaid.domain.PlanType
 import cc.zynafin.medaid.repository.PlanRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDate
+
 @Service
 open class BatchPlanIngestionService(
     private val planDataService: PlanDataService,
@@ -20,7 +23,7 @@ open class BatchPlanIngestionService(
 
     /**
      * Batch ingest plan data from all PDFs in a directory.
-     * Automatically matches PDFs to existing plans and overwrites previous entries.
+     * Creates or updates plans based on PDF metadata. Idempotent operation.
      *
      * @param directoryPath Path to directory containing PDF files
      * @return BatchIngestionResult with summary of processing
@@ -109,10 +112,13 @@ open class BatchPlanIngestionService(
     }
 
     /**
-     * Ingest a single PDF file and match it to an existing plan.
+     * Ingest a single PDF file and create/update the plan.
+     * Idempotent - if plan exists for scheme+name+year, it will be updated.
      */
-    fun ingestSinglePdf(pdfPath: Path): BatchItemResult {
+    @Transactional
+    open fun ingestSinglePdf(pdfPath: Path): BatchItemResult {
         val filename = pdfPath.fileName.toString()
+        val absolutePath = pdfPath.toAbsolutePath().toString()
 
         return try {
             // Extract metadata using RagService logic
@@ -121,15 +127,12 @@ open class BatchPlanIngestionService(
             val planName = metadata["plan_name"] as String
             val year = metadata["year"] as Int
 
-            // Find matching plan in database
-            val matchingPlans = planRepository.findBySchemeAndPlanYear(scheme, year)
-            val plan = findBestMatchingPlan(matchingPlans, planName, filename)
-
-            if (plan == null) {
+            // Skip if we can't determine the scheme or plan name
+            if (scheme == "Unknown" || planName.isBlank()) {
                 return BatchItemResult(
                     filename = filename,
                     status = BatchItemStatus.SKIPPED,
-                    message = "No matching plan found in database (scheme=$scheme, plan=$planName, year=$year)",
+                    message = "Could not extract valid scheme or plan name from filename",
                     planId = null,
                     contributionsExtracted = 0,
                     benefitsExtracted = 0,
@@ -137,7 +140,30 @@ open class BatchPlanIngestionService(
                 )
             }
 
-            log.debug("Matched PDF to plan: ${plan.id} - ${plan.scheme} ${plan.planName} (${plan.planYear})")
+            // Determine plan type from name
+            val planType = inferPlanType(planName, filename)
+
+            // Find existing plan or create new one (idempotent upsert)
+            val existingPlan = planRepository.findBySchemeAndPlanNameAndPlanYear(scheme, planName, year)
+
+            val plan = if (existingPlan != null) {
+                log.debug("Found existing plan: ${existingPlan.id} - updating with new data")
+                existingPlan
+            } else {
+                log.debug("Creating new plan for: $scheme - $planName ($year)")
+                val newPlan = Plan(
+                    scheme = scheme,
+                    planName = planName,
+                    planYear = year,
+                    planType = planType,
+                    principalContribution = 0.0,  // Will be extracted from PDF
+                    sourceDocument = absolutePath,
+                    createdAt = LocalDate.now()
+                )
+                planRepository.save(newPlan)
+            }
+
+            log.debug("Processing plan: ${plan.id} - ${plan.scheme} ${plan.planName} (${plan.planYear})")
 
             // Parse contributions (idempotent - deletes existing first)
             val contributionsResult = planDataService.parseAndStoreContributions(
@@ -154,7 +180,7 @@ open class BatchPlanIngestionService(
             BatchItemResult(
                 filename = filename,
                 status = BatchItemStatus.SUCCESS,
-                message = "Successfully ingested plan data",
+                message = if (existingPlan != null) "Updated existing plan" else "Created new plan",
                 planId = plan.id,
                 planName = "${plan.scheme} ${plan.planName}",
                 planYear = plan.planYear,
@@ -178,55 +204,22 @@ open class BatchPlanIngestionService(
     }
 
     /**
-     * Find the best matching plan from a list of candidates.
-     * Uses fuzzy matching on plan name.
+     * Infer plan type from plan name and filename.
      */
-    private fun findBestMatchingPlan(
-        plans: List<Plan>,
-        extractedPlanName: String,
-        filename: String
-    ): Plan? {
-        if (plans.isEmpty()) return null
-
-        // Try exact match first (case-insensitive)
-        val exactMatch = plans.find {
-            it.planName.equals(extractedPlanName, ignoreCase = true)
+    private fun inferPlanType(planName: String, filename: String): PlanType {
+        val nameLower = planName.lowercase()
+        val fileLower = filename.lowercase()
+        
+        return when {
+            nameLower.contains("comprehensive") || nameLower.contains("complete") -> PlanType.COMPREHENSIVE
+            nameLower.contains("saver") || nameLower.contains("savings") -> PlanType.SAVINGS
+            nameLower.contains("network") || nameLower.contains("keycare") || 
+                nameLower.contains("cap") || nameLower.contains("ingwe") -> PlanType.NETWORK
+            nameLower.contains("hospital") || nameLower.contains("standard") -> PlanType.HOSPITAL
+            fileLower.contains("hospital") && !nameLower.contains("comprehensive") -> PlanType.HOSPITAL
+            fileLower.contains("network") || fileLower.contains("cap") -> PlanType.NETWORK
+            else -> PlanType.COMPREHENSIVE  // Default to comprehensive for unknown
         }
-        if (exactMatch != null) return exactMatch
-
-        // Try partial match (contains)
-        val partialMatches = plans.filter {
-            it.planName.contains(extractedPlanName, ignoreCase = true) ||
-                extractedPlanName.contains(it.planName, ignoreCase = true)
-        }
-
-        if (partialMatches.size == 1) return partialMatches[0]
-
-        // If multiple matches, try to choose based on filename matching
-        if (partialMatches.size > 1) {
-            val bestMatch = partialMatches.maxByOrNull { plan ->
-                calculateSimilarity(filename, "${plan.scheme} ${plan.planName}")
-            }
-            log.debug("Multiple plan matches found, selected best match: ${bestMatch?.planName}")
-            return bestMatch
-        }
-
-        // No match found
-        return null
-    }
-
-    /**
-     * Calculate similarity score between two strings.
-     * Simple implementation based on common characters.
-     */
-    private fun calculateSimilarity(str1: String, str2: String): Int {
-        val s1 = str1.lowercase()
-        val s2 = str2.lowercase()
-
-        val commonChars = s1.count { it in s2 }
-        val maxLength = maxOf(s1.length, s2.length)
-
-        return (commonChars * 100 / maxLength)
     }
 
     /**

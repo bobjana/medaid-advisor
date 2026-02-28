@@ -89,6 +89,11 @@
             <artifactId>pgvector</artifactId>
             <version>0.1.4</version>
         </dependency>
+        <!-- Flyway for database migrations -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
 
         <!-- PDF Processing -->
         <dependency>

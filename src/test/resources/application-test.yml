@@ -22,6 +22,17 @@ spring:
         dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
 
+  # Disable Flyway for tests - we use H2 create-drop instead
+  flyway:
+    enabled: false
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
   main:
     allow-bean-definition-overriding: true
 server:

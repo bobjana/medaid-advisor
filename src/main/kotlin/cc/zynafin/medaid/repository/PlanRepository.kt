@@ -34,4 +34,6 @@ interface PlanRepository : JpaRepository<Plan, String> {
         ORDER BY p.planYear DESC
     """)
     fun findAllPlanYears(): List<Int>
+
+    fun findBySchemeAndPlanNameAndPlanYear(scheme: String, planName: String, planYear: Int): Plan?
 }
