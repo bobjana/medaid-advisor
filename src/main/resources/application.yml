@@ -18,10 +18,11 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
-  # Spring AI Configuration - Ollama only
+  # Spring AI Configuration - OpenAI (pointing to Ollama endpoint)
   ai:
-    ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    openai:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}/v1
+      api-key: ${OPENAI_API_KEY:sk-dummy}
       chat:
         enabled: true
         options:
@@ -31,7 +32,12 @@ spring:
         enabled: true
         options:
           model: nomic-embed-text
-    # Vector Store (pgvector)
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        enabled: false
+      embedding:
+        enabled: false
     vectorstore:
       pgvector:
         dimension: 768  # nomic-embed-text dimension

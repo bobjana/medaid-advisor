@@ -2,13 +2,15 @@ package cc.zynafin.medaid.controller
 
 import cc.zynafin.medaid.domain.Plan
 import cc.zynafin.medaid.repository.PlanRepository
+import cc.zynafin.medaid.service.BatchPlanIngestionService
+import cc.zynafin.medaid.service.BatchIngestionResult
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-
 @RestController
 @RequestMapping("/api/v1/plans")
 class PlanController(
-    private val planRepository: PlanRepository
+    private val planRepository: PlanRepository,
+    private val batchPlanIngestionService: BatchPlanIngestionService
 ) {
 
     @GetMapping
@@ -47,4 +49,12 @@ class PlanController(
     fun getPlanYears(): ResponseEntity<List<Int>> {
         return ResponseEntity.ok(planRepository.findAllPlanYears())
     }
+
+    @PostMapping("/ingest-directory")
+    fun ingestDirectory(@RequestBody request: Map<String, String>): ResponseEntity<BatchIngestionResult> {
+        val directoryPath = request["directoryPath"] ?: "data/plans"
+        val result = batchPlanIngestionService.ingestDirectory(directoryPath)
+        return ResponseEntity.ok(result)
+    }
+
 }

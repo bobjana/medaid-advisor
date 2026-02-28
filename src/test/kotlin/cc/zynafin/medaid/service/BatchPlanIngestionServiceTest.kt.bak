@@ -1,0 +1,147 @@
+package cc.zynafin.medaid.service
+
+import cc.zynafin.medaid.domain.*
+import cc.zynafin.medaid.repository.PlanRepository
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import org.mockito.InjectMocks
+import org.mockito.kotlin.*
+import org.mockito.MockitoAnnotations
+import java.nio.file.Files
+import java.nio.file.Path
+
+class BatchPlanIngestionServiceTest {
+
+    private lateinit var planDataService: PlanDataService
+    private lateinit var ragService: RagService
+    private lateinit var planRepository: PlanRepository
+
+    @InjectMocks
+    private lateinit var service: BatchPlanIngestionService
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    @BeforeEach
+    fun setup() {
+        planDataService = mock()
+        ragService = mock()
+        planRepository = mock()
+        MockitoAnnotations.openMocks(this)
+    }
+
+    @Test
+    fun `ingestDirectory should return error when directory does not exist`() {
+        val result = service.ingestDirectory("/nonexistent/directory")
+
+        assertFalse(result.success)
+        assertEquals("Directory does not exist", result.error)
+        assertEquals(0, result.totalFiles)
+    }
+
+    @Test
+    fun `ingestDirectory should return empty result when directory is empty`() {
+        Files.createDirectories(tempDir)
+        
+        val result = service.ingestDirectory(tempDir.toString())
+
+        assertTrue(result.success)
+        assertEquals(0, result.totalFiles)
+        assertEquals(0, result.successfulIngestions)
+        assertTrue(result.results.isEmpty())
+    }
+
+    @Test
+    fun `ingestSinglePdf should extract metadata from filename`() {
+        val pdfFile = Files.createFile(tempDir, "discovery-health-comprehensive-2026.pdf")
+        val metadata = mapOf(
+            "filename" to "discovery-health-comprehensive-2026.pdf",
+            "scheme" to "Discovery Health",
+            "plan_name" to "Comprehensive",
+            "year" to 2026
+        )
+        every { ragService.extractMetadataFromFilename(any()) } returns metadata
+        
+        val result = service.ingestSinglePdf(pdfFile.toFile())
+
+        assertNotNull(result)
+    }
+
+    @Test
+    fun `ingestSinglePdf should fail when no matching plan found`() {
+        val pdfFile = Files.createFile(tempDir, "unknown-scheme-2026.pdf")
+        every { ragService.extractMetadataFromFilename(any()) } returns mapOf(
+            "scheme" to "Unknown",
+            "plan_name" to "Unknown"
+        )
+        every { planRepository.findBySchemeAndPlanYear(any(), any()) } returns emptyList()
+        
+        val result = service.ingestSinglePdf(pdfFile.toFile())
+
+        assertNotNull(result)
+        assertEquals(BatchItemStatus.FAILED, result.status)
+    }
+
+    @Test
+    fun `shouldProcessFile should skip Momentum Option files`() {
+        val momentumOptionFiles = listOf(
+            "Custom Option 2026.pdf",
+            "Evolve Option 2026.pdf",
+            "Extender Option 2026.pdf",
+            "Incentive Option 2026.pdf",
+            "Ingwe Option 2026.pdf",
+            "Summit Option 2026.pdf"
+        )
+
+        momentumOptionFiles.forEach { filename ->
+            assertFalse(service.shouldProcessFile(filename), "Should skip: $filename")
+        }
+    }
+
+    @Test
+    fun `shouldProcessFile should skip overview file`() {
+        val overviewFile = "Benefit Option Overview 2026.pdf"
+        
+        assertFalse(service.shouldProcessFile(overviewFile), "Should skip overview file")
+    }
+
+    @Test
+    fun `shouldProcessFile should allow valid plan file`() {
+        val validFile = "discovery-health-comprehensive-2026.pdf"
+        
+        assertTrue(service.shouldProcessFile(validFile), "Should allow valid plan file")
+    }
+
+    @Test
+    fun `findBestMatchingPlan should find exact match`() {
+        val plan = Plan(id = 1L, scheme = "Discovery Health", planName = "Comprehensive", planYear = 2026)
+        val plans = listOf(plan)
+        every { planRepository.findBySchemeAndPlanYear("Discovery Health", 2026) } returns plans
+        
+        val matchedPlan = service.findBestMatchingPlan("Discovery Health", "Comprehensive", 2026)
+        
+        assertNotNull(matchedPlan)
+        assertEquals("Discovery Health", matchedPlan?.scheme)
+        assertEquals("Comprehensive", matchedPlan?.planName)
+    }
+
+    @Test
+    fun `ingestSinglePdf should handle parsing errors gracefully`() {
+        val pdfFile = Files.createFile(tempDir, "discovery-health-comprehensive-2026.pdf")
+        every { ragService.extractMetadataFromFilename(any()) } returns mapOf(
+            "scheme" to "Discovery Health",
+            "plan_name" to "Comprehensive"
+        )
+        every { planRepository.findBySchemeAndPlanYear(any(), any()) } returns listOf(
+            Plan(id = 1L, scheme = "Discovery Health", planName = "Comprehensive", planYear = 2026)
+        )
+        every { planDataService.parseAndStoreContributions(any(), any(), any()) } throws RuntimeException("Parse error")
+        
+        val result = service.ingestSinglePdf(pdfFile.toFile())
+        
+        assertNotNull(result)
+        assertEquals(BatchItemStatus.FAILED, result.status)
+    }
+}

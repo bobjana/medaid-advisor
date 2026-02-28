@@ -1,7 +1,7 @@
 package cc.zynafin.medaid
 
 import org.springframework.ai.chat.client.ChatClient
-import org.springframework.ai.ollama.OllamaChatModel
+import org.springframework.ai.openai.OpenAiChatModel
 import org.springframework.ai.vectorstore.VectorStore
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.autoconfigure.domain.EntityScan
@@ -27,7 +27,7 @@ open class TestApplication {
 
     @Bean
     @Primary
-    open fun ollamaChatModel(): OllamaChatModel {
-        return Mockito.mock(OllamaChatModel::class.java)
+    open fun openAiChatModel(): OpenAiChatModel {
+        return Mockito.mock(OpenAiChatModel::class.java)
     }
 }

@@ -15,7 +15,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 @Service
-class RagService(
+open class RagService(
     private val vectorStore: VectorStore,
     @Value("\${medaid.documents.chunk-size:800}")
     private val chunkSize: Int,

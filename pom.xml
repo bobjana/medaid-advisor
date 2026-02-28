@@ -72,10 +72,12 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-pgvector-store-spring-boot-starter</artifactId>
         </dependency>
+        <!-- Temporarily disabled Ollama since it's not running
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
         </dependency>
+        -->
 
         <!-- Database -->
         <dependency>
