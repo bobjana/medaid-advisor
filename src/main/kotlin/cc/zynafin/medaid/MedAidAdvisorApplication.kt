@@ -4,9 +4,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-open class MedAidAsvirorApplication
+open class MedAidAdvisorApplication
 
 
 fun main(args: Array<String>) {
-    runApplication<MedAidAsvirorApplication>(*args)
+    runApplication<MedAidAdvisorApplication>(*args)
 }

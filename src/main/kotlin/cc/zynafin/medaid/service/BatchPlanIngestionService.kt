@@ -1,5 +1,7 @@
 package cc.zynafin.medaid.service
 
+import cc.zynafin.medaid.domain.BenefitCategory
+import cc.zynafin.medaid.domain.MemberType
 import cc.zynafin.medaid.domain.Plan
 import cc.zynafin.medaid.domain.PlanType
 import cc.zynafin.medaid.repository.PlanRepository
@@ -122,13 +124,11 @@ open class BatchPlanIngestionService(
         val absolutePath = pdfPath.toAbsolutePath().toString()
 
         return try {
-            // Extract metadata using RagService logic
             val metadata = ragService.extractMetadataFromFilename(filename)
             val scheme = metadata["scheme"] as String
             val planName = metadata["plan_name"] as String
             val year = metadata["year"] as Int
 
-            // Skip if we can't determine the scheme or plan name
             if (scheme == "Unknown" || planName.isBlank()) {
                 return BatchItemResult(
                     filename = filename,
@@ -141,10 +141,8 @@ open class BatchPlanIngestionService(
                 )
             }
 
-            // Determine plan type from name
             val planType = inferPlanType(planName, filename)
 
-            // Find existing plan or create new one (idempotent upsert)
             val existingPlan = planRepository.findBySchemeAndPlanNameAndPlanYear(scheme, planName, year)
 
             val plan = if (existingPlan != null) {
@@ -157,34 +155,51 @@ open class BatchPlanIngestionService(
                     planName = planName,
                     planYear = year,
                     planType = planType,
-                    principalContribution = 0.0,  // Will be extracted from PDF
+                    principalContribution = 0.0,
                     sourceDocument = absolutePath,
                     createdAt = LocalDate.now()
                 )
                 planRepository.save(newPlan)
             }
 
+            val planId = requireNotNull(plan.id) { "Persisted plan is missing id for file: $filename" }
+
             log.debug("Processing plan: ${plan.id} - ${plan.scheme} ${plan.planName} (${plan.planYear})")
 
-            // Parse contributions (idempotent - deletes existing first)
             val contributionsResult = planDataService.parseAndStoreContributions(
                 pdfPath.toString(),
-                plan.id!!
+                planId
             )
 
-            // Parse hospital benefits (idempotent - deletes existing first)
             val benefitsResult = planDataService.parseAndStoreHospitalBenefits(
                 pdfPath.toString(),
-                plan.id!!
+                planId
             )
+
+            val copaymentResult = planDataService.parseAndStoreCopayments(
+                pdfPath.toString(),
+                planId
+            )
+
+            val msaInfo = planDataService.extractMsaInfo(pdfPath.toString())
+
+            val enrichedPlan = enrichPlanFromParsedData(
+                plan = plan,
+                sourceDocument = absolutePath,
+                contributionsResult = contributionsResult,
+                benefitsResult = benefitsResult,
+                copaymentResult = copaymentResult,
+                msaInfo = msaInfo
+            )
+            val savedPlan = planRepository.save(enrichedPlan)
 
             BatchItemResult(
                 filename = filename,
                 status = BatchItemStatus.SUCCESS,
                 message = if (existingPlan != null) "Updated existing plan" else "Created new plan",
-                planId = plan.id,
-                planName = "${plan.scheme} ${plan.planName}",
-                planYear = plan.planYear,
+                planId = savedPlan.id,
+                planName = "${savedPlan.scheme} ${savedPlan.planName}",
+                planYear = savedPlan.planYear,
                 contributionsExtracted = contributionsResult.contributionsExtracted,
                 benefitsExtracted = benefitsResult.benefitsExtracted,
                 error = null
@@ -219,7 +234,7 @@ open class BatchPlanIngestionService(
             nameLower.contains("hospital") || nameLower.contains("standard") -> PlanType.HOSPITAL
             fileLower.contains("hospital") && !nameLower.contains("comprehensive") -> PlanType.HOSPITAL
             fileLower.contains("network") || fileLower.contains("cap") -> PlanType.NETWORK
-            else -> PlanType.COMPREHENSIVE  // Default to comprehensive for unknown
+            else -> PlanType.COMPREHENSIVE
         }
     }
 
@@ -230,24 +245,95 @@ open class BatchPlanIngestionService(
     private fun shouldProcessFile(filename: String): Boolean {
         val lowerName = filename.lowercase()
 
-        // Skip Momentum Option files (bolt-on riders)
-        if (lowerName.contains("option") &&
-            (lowerName.contains("momentum") || lowerName.contains("custom") ||
-                lowerName.contains("evolve") || lowerName.contains("extender") ||
-                lowerName.contains("incentive") || lowerName.contains("ingwe") ||
-                lowerName.contains("summit"))) {
-            log.debug("Skipping Momentum Option file: $filename")
-            return false
-        }
-
-        // Skip overview/comparative guides (no specific plan data)
         if (lowerName.contains("comparative") ||
             lowerName.contains("overview")) {
             log.debug("Skipping overview/comparative file: $filename")
             return false
         }
 
+        val isAddOnRider = lowerName.contains("add-on") ||
+            lowerName.contains("add on") ||
+            lowerName.contains("addon") ||
+            lowerName.contains("illness benefit option") ||
+            lowerName.contains("cover limit option")
+
+        if (isAddOnRider) {
+            log.debug("Skipping add-on rider document: $filename")
+            return false
+        }
+
         return true
+    }
+
+    private fun enrichPlanFromParsedData(
+        plan: Plan,
+        sourceDocument: String,
+        contributionsResult: ContributionParseResult,
+        benefitsResult: HospitalBenefitParseResult,
+        copaymentResult: CopaymentParseResult,
+        msaInfo: MsaInfo
+    ): Plan {
+        val contributionByMemberType = contributionsResult.contributions.associateBy { it.memberType }
+
+        val principalContribution = contributionByMemberType[MemberType.PRINCIPAL]?.monthlyAmount
+            ?: plan.principalContribution
+        val adultDependentContribution = contributionByMemberType[MemberType.SPOUSE]?.monthlyAmount
+            ?: plan.adultDependentContribution
+        val childDependentContribution = contributionByMemberType[MemberType.CHILD_FIRST]?.monthlyAmount
+            ?: plan.childDependentContribution
+
+        val categorySummaries = benefitsResult.benefits
+            .groupBy { it.category }
+            .mapValues { (_, categoryBenefits) ->
+                categoryBenefits.joinToString(" | ") { benefit ->
+                    val limit = benefit.limitPerPerson
+                        ?: benefit.limitPerFamily
+                        ?: benefit.annualLimit
+                        ?: "covered"
+                    "${benefit.benefitName}: $limit"
+                }
+            }
+
+        val benefitMap = categorySummaries.mapKeys { (category, _) ->
+            category.name.lowercase()
+        }
+
+        val hospitalSummary = categorySummaries[BenefitCategory.HOSPITAL_COVER]?.take(4000)
+        val chronicSummary = listOfNotNull(
+            categorySummaries[BenefitCategory.CHRONIC_MEDICINE],
+            categorySummaries[BenefitCategory.PRESCRIBED_MINIMUM_BENEFITS]
+        ).joinToString(" | ").ifBlank { null }?.take(4000)
+        val dayToDaySummary = listOfNotNull(
+            categorySummaries[BenefitCategory.SPECIALIST_CONSULTATION],
+            categorySummaries[BenefitCategory.DENTAL],
+            categorySummaries[BenefitCategory.OPTICAL]
+        ).joinToString(" | ").ifBlank { null }?.take(4000)
+
+        val hasMedicalSavingsAccount = msaInfo.hasMedicalSavingsAccount ||
+            plan.hasMedicalSavingsAccount ||
+            plan.planType == PlanType.SAVINGS ||
+            plan.planName.lowercase().contains("saver") ||
+            plan.planName.lowercase().contains("save")
+
+        return Plan(
+            id = plan.id,
+            scheme = plan.scheme,
+            planName = plan.planName,
+            planYear = plan.planYear,
+            planType = plan.planType,
+            principalContribution = principalContribution,
+            adultDependentContribution = adultDependentContribution,
+            childDependentContribution = childDependentContribution,
+            benefits = if (benefitMap.isNotEmpty()) benefitMap else plan.benefits,
+            copayments = if (copaymentResult.copayments.isNotEmpty()) copaymentResult.copayments else plan.copayments,
+            hospitalBenefits = hospitalSummary ?: plan.hospitalBenefits,
+            chronicBenefits = chronicSummary ?: plan.chronicBenefits,
+            dayToDayBenefits = dayToDaySummary ?: plan.dayToDayBenefits,
+            hasMedicalSavingsAccount = hasMedicalSavingsAccount,
+            msaPercentage = msaInfo.msaPercentage ?: plan.msaPercentage,
+            createdAt = plan.createdAt,
+            sourceDocument = sourceDocument
+        )
     }
 }
 

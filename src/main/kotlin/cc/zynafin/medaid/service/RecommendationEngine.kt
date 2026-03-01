@@ -22,7 +22,7 @@ class RecommendationEngine(
 
         // Score each plan
         val scoredPlans = plans.map { plan ->
-            val componentScores = calculateComponentScores(profile, plan, weights)
+            val componentScores = calculateComponentScores(profile, plan)
             val totalScore = calculateCompositeScore(componentScores, weights)
             val estimatedCost = estimateAnnualCost(profile, plan)
 
@@ -53,7 +53,7 @@ class RecommendationEngine(
         var plans = planRepository.findByPlanYear(2026)
 
         if (profile.maxAnnualBudget != null) {
-            val maxMonthly = profile.maxAnnualBudget!! / 12
+            val maxMonthly = profile.maxAnnualBudget / 12
             plans = plans.filter { it.principalContribution <= maxMonthly * 1.2 } // Allow 20% over budget for scoring
         }
 
@@ -66,8 +66,7 @@ class RecommendationEngine(
 
     private fun calculateComponentScores(
         profile: EmployeeProfile,
-        plan: Plan,
-        weights: ScoringWeights
+        plan: Plan
     ): ComponentScores {
         return ComponentScores(
             costScore = scoreCost(profile, plan),
@@ -82,10 +81,10 @@ class RecommendationEngine(
         val totalAnnual = totalMonthly * 12
 
         return if (profile.maxAnnualBudget != null) {
-            if (totalAnnual <= profile.maxAnnualBudget!!) {
+            if (totalAnnual <= profile.maxAnnualBudget) {
                 1.0
             } else {
-                max(0.0, 1.0 - (totalAnnual - profile.maxAnnualBudget!!) / profile.maxAnnualBudget!!)
+                max(0.0, 1.0 - (totalAnnual - profile.maxAnnualBudget) / profile.maxAnnualBudget)
             }
         } else {
             // Normalize against cheapest plan (simplified)

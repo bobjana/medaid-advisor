@@ -116,6 +116,20 @@ The API will be available at `http://localhost:8080`
 
 ## 📚 API Endpoints
 
+### 📖 Swagger / OpenAPI Documentation
+
+Interactive API documentation is available at:
+
+| URL | Description |
+|-----|-------------|
+| [Swagger UI](http://localhost:8080/swagger-ui.html) | Interactive API explorer |
+| [OpenAPI JSON](http://localhost:8080/v3/api-docs) | Raw OpenAPI 3.0 specification |
+| [OpenAPI YAML](http://localhost:8080/v3/api-docs.yaml) | OpenAPI spec as YAML |
+
+Use Swagger UI to test endpoints directly from the browser.
+
+### Recommendation Engine
+
 ### Recommendation Engine
 
 #### Generate Recommendations

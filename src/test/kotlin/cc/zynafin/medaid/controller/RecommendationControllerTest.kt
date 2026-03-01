@@ -4,6 +4,7 @@ import cc.zynafin.medaid.domain.Plan
 import cc.zynafin.medaid.domain.PlanType
 import cc.zynafin.medaid.repository.PlanRepository
 import cc.zynafin.medaid.service.RagService
+import cc.zynafin.medaid.MedAidAdvisorApplication
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -23,7 +24,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 
 @SpringBootTest(
-    classes = [cc.zynafin.medaid.MedAidAsvirorApplication::class]
+    classes = [cc.zynafin.medaid.MedAidAdvisorApplication::class]
 )
 @ImportAutoConfiguration(exclude = [OpenAiAutoConfiguration::class, PgVectorStoreAutoConfiguration::class])
 @AutoConfigureMockMvc

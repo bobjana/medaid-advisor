@@ -24,9 +24,11 @@ open class PlanDataService(
 ) {
     private val log = LoggerFactory.getLogger(PlanDataService::class.java)
 
-    /**
-     * Parse contribution tables from PDF and update plan
-     */
+    companion object {
+        private const val MIN_VALID_CONTRIBUTION = 100.0
+        private const val MAX_VALID_CONTRIBUTION = 50000.0
+    }
+
     @Transactional
     open fun parseAndStoreContributions(pdfPath: String, planId: UUID): ContributionParseResult {
         val plan = planRepository.findById(planId).orElseThrow {
@@ -35,18 +37,13 @@ open class PlanDataService(
 
         val contributions = extractContributionsFromPdf(pdfPath, plan)
 
-        // Clear existing contributions
         contributionRepository.findByPlanId(planId).forEach {
             contributionRepository.delete(it)
         }
 
-        // Save new contributions
         val saved = contributions.map {
             contributionRepository.save(it)
         }
-
-        // Note: Plan entity uses val (immutable), so we cannot modify it directly
-        // Contributions are stored separately and can be queried via ContributionRepository
 
         return ContributionParseResult(
             success = true,
@@ -56,9 +53,6 @@ open class PlanDataService(
         )
     }
 
-    /**
-     * Parse hospital benefit limits from PDF and update plan
-     */
     @Transactional
     open fun parseAndStoreHospitalBenefits(pdfPath: String, planId: UUID): HospitalBenefitParseResult {
         val plan = planRepository.findById(planId).orElseThrow {
@@ -67,18 +61,13 @@ open class PlanDataService(
 
         val benefits = extractHospitalBenefitsFromPdf(pdfPath, plan)
 
-        // Clear existing benefits
         hospitalBenefitRepository.findByPlanId(planId).forEach {
             hospitalBenefitRepository.delete(it)
         }
 
-        // Save new benefits
         val saved = benefits.map {
             hospitalBenefitRepository.save(it)
         }
-
-        // Note: Plan entity uses val (immutable), so we cannot modify it directly
-        // Hospital benefits are stored separately and can be queried via HospitalBenefitRepository
 
         return HospitalBenefitParseResult(
             success = true,
@@ -88,9 +77,48 @@ open class PlanDataService(
         )
     }
 
-    /**
-     * Extract contribution table data from PDF text
-     */
+    @Transactional
+    open fun parseAndStoreCopayments(pdfPath: String, planId: UUID): CopaymentParseResult {
+        val plan = planRepository.findById(planId).orElseThrow {
+            IllegalArgumentException("Plan not found: $planId")
+        }
+
+        val copayments = extractCopaymentsFromPdf(pdfPath, plan)
+
+        return CopaymentParseResult(
+            success = true,
+            planId = planId,
+            copaymentsExtracted = copayments.size,
+            copayments = copayments
+        )
+    }
+
+    open fun extractMsaInfo(pdfPath: String): MsaInfo {
+        val file = File(pdfPath)
+        val pdfDoc = Loader.loadPDF(file)
+        val text = pdfDoc.use { doc ->
+            val stripper = PDFTextStripper()
+            stripper.getText(doc)
+        }
+
+        val lowerText = text.lowercase()
+
+        val hasMsa = lowerText.contains("medical savings account") ||
+                lowerText.contains("msa") ||
+                lowerText.contains("savings account") ||
+                lowerText.contains("personal savings") ||
+                lowerText.contains("day-to-day benefit")
+
+        val msaPercentage = if (hasMsa) {
+            extractMsaPercentage(lowerText)
+        } else null
+
+        return MsaInfo(
+            hasMedicalSavingsAccount = hasMsa,
+            msaPercentage = msaPercentage
+        )
+    }
+
     private fun extractContributionsFromPdf(pdfPath: String, plan: Plan): List<Contribution> {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
@@ -100,25 +128,10 @@ open class PlanDataService(
         }
 
         val contributions = mutableListOf<Contribution>()
-
-        // Pattern 1: Table with column headers like "Principal | Spouse | Child"
-        val contributionPattern = Pattern.compile(
-            """(?i)principal\s*[|:]\s*R\s*(\d+[,\d.]*\d*)\s*[|:]\s*spouse\s*[|:]\s*R\s*(\d+[,\d.]*\d*)""",
-            Pattern.MULTILINE
-        )
-
-        // Pattern 2: Row-by-row contribution data
-        val rowPattern = Pattern.compile(
-            """(?i)(principal|spouse|adult|child|dependen)\s*[|:]\s*R\s*(\d+[,\d.]*\d*)""",
-            Pattern.MULTILINE
-        )
-
-        // Try to extract contributions by searching for common patterns
         val lines = text.lines()
 
         for (line in lines) {
-            // Look for principal contribution
-            val principalMatch = extractContributionAmount(line, listOf("principal", "main member", "adult"))
+            val principalMatch = extractContributionAmount(line, listOf("principal", "main member"))
             if (principalMatch != null && contributions.none { it.memberType == MemberType.PRINCIPAL }) {
                 contributions.add(Contribution(
                     plan = plan,
@@ -128,7 +141,6 @@ open class PlanDataService(
                 ))
             }
 
-            // Look for spouse contribution
             val spouseMatch = extractContributionAmount(line, listOf("spouse", "partner", "adult dependent"))
             if (spouseMatch != null && contributions.none { it.memberType == MemberType.SPOUSE }) {
                 contributions.add(Contribution(
@@ -139,8 +151,7 @@ open class PlanDataService(
                 ))
             }
 
-            // Look for child contribution
-            val childMatch = extractContributionAmount(line, listOf("child", "kid", "dependent"))
+            val childMatch = extractContributionAmount(line, listOf("child", "children"))
             if (childMatch != null) {
                 val childNum = contributions.count { it.memberType.name.startsWith("CHILD") }
                 val memberType = when (childNum) {
@@ -163,9 +174,6 @@ open class PlanDataService(
         return contributions
     }
 
-    /**
-     * Extract hospital benefit limits from PDF text
-     */
     private fun extractHospitalBenefitsFromPdf(pdfPath: String, plan: Plan): List<HospitalBenefit> {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
@@ -177,7 +185,6 @@ open class PlanDataService(
         val benefits = mutableListOf<HospitalBenefit>()
         val lines = text.lines()
 
-        // Benefit patterns to look for
         val benefitPatterns = mapOf(
             BenefitCategory.HOSPITAL_COVER to listOf("hospital", "in-hospital", "hospitalization"),
             BenefitCategory.CHRONIC_MEDICINE to listOf("chronic", "chronic medicine", "cdl"),
@@ -194,7 +201,6 @@ open class PlanDataService(
 
             for ((category, keywords) in benefitPatterns) {
                 if (keywords.any { lowerLine.contains(it) }) {
-                    // Try to extract limit/coverage amounts
                     val limit = extractLimitAmount(line)
 
                     if (!benefits.any { it.category == category }) {
@@ -218,23 +224,80 @@ open class PlanDataService(
         return benefits
     }
 
-    /**
-     * Extract contribution amount from text line
-     */
+    private fun extractCopaymentsFromPdf(pdfPath: String, plan: Plan): Map<String, Double> {
+        val file = File(pdfPath)
+        val pdfDoc = Loader.loadPDF(file)
+        val text = pdfDoc.use { doc ->
+            val stripper = PDFTextStripper()
+            stripper.getText(doc)
+        }
+
+        val copayments = mutableMapOf<String, Double>()
+        val lines = text.lines()
+
+        val copaymentPatterns = mapOf(
+            "gp_consultation" to listOf("gp consultation", "general practitioner", "doctor visit"),
+            "specialist_consultation" to listOf("specialist consultation", "specialist visit"),
+            "acute_medicine" to listOf("acute medicine", "prescribed medicine"),
+            "radiology" to listOf("radiology", "x-ray", "scan"),
+            "pathology" to listOf("pathology", "blood test", "lab test"),
+            "dental" to listOf("dental consultation", "dentist"),
+            "optical" to listOf("optical", "eye test", "optometrist")
+        )
+
+        for (line in lines) {
+            val lowerLine = line.lowercase()
+
+            for ((copaymentType, keywords) in copaymentPatterns) {
+                if (keywords.any { lowerLine.contains(it) } && lowerLine.contains("copayment")) {
+                    val amount = extractCopaymentAmount(line)
+                    if (amount != null && !copayments.containsKey(copaymentType)) {
+                        copayments[copaymentType] = amount
+                    }
+                }
+            }
+        }
+
+        log.info("Extracted ${copayments.size} copayments from PDF: $pdfPath")
+        return copayments
+    }
+
     fun extractContributionAmount(line: String, keywords: List<String>): Double? {
         val lowerLine = line.lowercase()
         if (keywords.none { lowerLine.contains(it) }) return null
 
-        // Pattern: R 1234.56 or R 1,234.56
-        val amountPattern = Pattern.compile("""R\s*(\d+[,\.\d]*)\d*""")
+        val amountPattern = Pattern.compile("R\\s*(\\d{3,5}(?:[\\s,.]\\d{3})*(?:\\.\\d{2})?)")
+        val matcher = amountPattern.matcher(line)
+
+        while (matcher.find()) {
+            try {
+                val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
+                val amount = BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
+
+                if (amount in MIN_VALID_CONTRIBUTION..MAX_VALID_CONTRIBUTION) {
+                    return amount
+                }
+            } catch (e: Exception) {
+                log.debug("Failed to parse amount from: ${matcher.group(1)}")
+            }
+        }
+
+        return null
+    }
+
+    private fun extractCopaymentAmount(line: String): Double? {
+        val lowerLine = line.lowercase()
+        if (!lowerLine.contains("copayment") && !lowerLine.contains("co-payment")) return null
+
+        val amountPattern = Pattern.compile("R\\s*(\\d{1,4}(?:[\\s,.]\\d{3})*(?:\\.\\d{2})?)")
         val matcher = amountPattern.matcher(line)
 
         if (matcher.find()) {
             return try {
-                val amountStr = matcher.group(1).replace(",", "")
+                val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
                 BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
             } catch (e: Exception) {
-                log.warn("Failed to parse amount: $line", e)
+                log.debug("Failed to parse copayment amount: $line")
                 null
             }
         }
@@ -242,17 +305,13 @@ open class PlanDataService(
         return null
     }
 
-    /**
-     * Extract limit information from benefit line
-     */
     private fun extractLimitAmount(line: String): LimitInfo? {
-        // Pattern: R 1,000,000 per family or R 200,000 p/a
-        val limitPattern = Pattern.compile("""R\s*(\d+[,\.\d]*)\d*\s*(per\s+(family|person|p[/a])?)""")
+        val limitPattern = Pattern.compile("R\\s*(\\d{1,3}(?:[\\s,.]\\d{3})+)\\s*(per\\s+(family|person|p[/a]))?")
         val matcher = limitPattern.matcher(line)
 
         if (matcher.find()) {
             return try {
-                val amountStr = matcher.group(1).replace(",", "")
+                val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
                 val amount = BigDecimal(amountStr)
                 val perType = matcher.group(2)?.lowercase() ?: ""
 
@@ -270,26 +329,45 @@ open class PlanDataService(
         return null
     }
 
-    /**
-     * Extract benefit name from line
-     */
+    private fun extractMsaPercentage(text: String): Double? {
+        val patterns = listOf(
+            "(\\d+)%?\\s*(?:of|from)\\s*(?:contribution|premium)".toRegex(),
+            "(?:msa|savings)\\s*(?:is)?\\s*(\\d+)%".toRegex(),
+            "(\\d+)%\\s*(?:msa|medical savings|savings account)".toRegex()
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return try {
+                    match.groupValues[1].toDouble()
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+
+        return when {
+            text.contains("25%") -> 25.0
+            text.contains("20%") -> 20.0
+            text.contains("15%") -> 15.0
+            else -> null
+        }
+    }
+
     private fun extractBenefitName(line: String): String {
-        // Remove numeric values and limit indicators
         return line
-            .replace("""R\s*\d+[,\.\d]*\d*""".toRegex(), "")
-            .replace("""per\s+(family|person|p[/a])""".toRegex(), "")
-            .replace("""\s+""".toRegex(), " ")
+            .replace("R\\s*\\d+[\\s,.\\d]*\\d*".toRegex(), "")
+            .replace("per\\s+(family|person|p[/a])".toRegex(), "")
+            .replace("\\s+".toRegex(), " ")
             .trim()
             .takeIf { it.isNotEmpty() } ?: "Benefit"
     }
 
-    /**
-     * Build summary text for hospital benefits
-     */
     private fun buildHospitalBenefitsSummary(benefits: List<HospitalBenefit>): String {
         return benefits.joinToString("\n") { benefit ->
             "${benefit.category.name}: ${benefit.limitPerPerson ?: benefit.limitPerFamily ?: "No limit specified"}"
-        }.take(4000) // Limit to VARCHAR(4000)
+        }.take(4000)
     }
 }
 
@@ -305,6 +383,18 @@ data class HospitalBenefitParseResult(
     val planId: UUID,
     val benefitsExtracted: Int,
     val benefits: List<HospitalBenefit> = emptyList()
+)
+
+data class CopaymentParseResult(
+    val success: Boolean,
+    val planId: UUID,
+    val copaymentsExtracted: Int,
+    val copayments: Map<String, Double> = emptyMap()
+)
+
+data class MsaInfo(
+    val hasMedicalSavingsAccount: Boolean,
+    val msaPercentage: Double? = null
 )
 
 data class LimitInfo(
