@@ -54,6 +54,82 @@ open class PlanDataService(
     }
 
     @Transactional
+    open fun extractAndStoreContributionsAgentic(planId: UUID, useRagData: Boolean = true): ContributionParseResult {
+        try {
+            val plan = planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
+
+            if (!useRagData) {
+                throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
+            }
+
+            throw UnsupportedOperationException(
+                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            )
+        } catch (e: Exception) {
+            log.error("Failed to extract contributions agenticly for plan $planId", e)
+            return ContributionParseResult(
+                success = false,
+                planId = planId,
+                contributionsExtracted = 0,
+                contributions = emptyList()
+            )
+        }
+    }
+
+    @Transactional
+    open fun extractAndStoreHospitalBenefitsAgentic(planId: UUID, useRagData: Boolean = true): HospitalBenefitParseResult {
+        try {
+            val plan = planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
+
+            if (!useRagData) {
+                throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
+            }
+
+            throw UnsupportedOperationException(
+                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            )
+        } catch (e: Exception) {
+            log.error("Failed to extract hospital benefits agenticly for plan $planId", e)
+            return HospitalBenefitParseResult(
+                success = false,
+                planId = planId,
+                benefitsExtracted = 0,
+                benefits = emptyList()
+            )
+        }
+    }
+
+    @Transactional
+    open fun extractAndStoreCopaymentsAgentic(planId: UUID, useRagData: Boolean = true): CopaymentParseResult {
+        try {
+            val plan = planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
+
+            if (!useRagData) {
+                throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
+            }
+
+            throw UnsupportedOperationException(
+                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            )
+        } catch (e: Exception) {
+            log.error("Failed to extract copayments agenticly for plan $planId", e)
+            return CopaymentParseResult(
+                success = false,
+                planId = planId,
+                copaymentsExtracted = 0,
+                copayments = emptyMap()
+            )
+        }
+    }
+
+
+    @Transactional
     open fun parseAndStoreHospitalBenefits(pdfPath: String, planId: UUID): HospitalBenefitParseResult {
         val plan = planRepository.findById(planId).orElseThrow {
             IllegalArgumentException("Plan not found: $planId")

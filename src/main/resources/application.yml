@@ -84,7 +84,7 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
 
-# Custom configuration
+#KZ|# Custom configuration
 medaid:
   documents:
     source-path: ${MEDAID_DOCS_PATH:~/Documents/medaids}
@@ -96,3 +96,11 @@ medaid:
       coverage: 0.40
       convenience: 0.15
       risk: 0.15
+99|  extraction:
+100|YQ|    agentic-enabled: false
+101|HM|    confidence-threshold-local: 0.75
+102|MH|    confidence-threshold-review: 0.6
+103|RN|    remote-llm:
+104|JX|      base-url: ${REMOTE_LLM_BASE_URL:}
+105|TJ|      model: ${REMOTE_LLM_MODEL:}
+106|YB|      api-key: ${REMOTE_LLM_API_KEY:}

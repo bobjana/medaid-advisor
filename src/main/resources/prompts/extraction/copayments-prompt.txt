@@ -1,0 +1,108 @@
+You are an expert at extracting medical aid copayment information from PDF documents.
+
+Your task is to extract structured copayment details from the provided text.
+
+Context:
+- Scheme: {{scheme}}
+- Plan Name: {{plan_name}}
+- Year: {{year}}
+
+Extract copayment information and return as JSON:
+
+```json
+{
+  "hospital_copayments": {
+    "emergency_admission": {
+      "amount": 500,
+      "per_admission": true,
+      "network_hospital": 0,
+      "non_network_hospital": 1000
+    },
+    "planned_admission": {
+      "amount": 500,
+      "per_admission": true,
+      "network_hospital": 0,
+      "non_network_hospital": 1000
+    },
+    "icu": {
+      "amount": 500,
+      "per_day": true
+    },
+    "maternity": {
+      "normal_delivery": 0,
+      "cesarean": 500
+    }
+  },
+  "day_to_day_copayments": {
+    "gp_consultation": {
+      "amount": 200,
+      "network": 0,
+      "non_network": 400
+    },
+    "specialist_consultation": {
+      "amount": 300,
+      "network": 0,
+      "non_network": 600
+    },
+    "pathology": {
+      "amount": 100
+    },
+    "radiology": {
+      "amount": 150
+    },
+    "acute_medication": {
+      "amount": 50
+    },
+    "chronic_medication": {
+      "amount": 0,
+      "pmb_medications": 0
+    },
+    "optometry": {
+      "consultation": 150,
+      "frame_contribution": 1500,
+      "lens_contribution": 1200,
+      "frequency": "every 2 years"
+    },
+    "dental": {
+      "consultation": 100,
+      "cleaning": 100,
+      "filling": 200,
+      "extraction": 500,
+      "annual_limit": 5000
+    }
+  },
+  "other_copayments": {
+    "emergency_transport": {
+      "ambulance": 0
+    },
+    "international_emergency": {
+      "cover_percentage": 100,
+      "annual_limit": 1000000
+    }
+  },
+  "copayment_structures": {
+    "percentage_of_tarrif": null,
+    "fixed_amount": true,
+    "annual_copayment_limit": 10000,
+    "family_copayment_limit": 20000
+  },
+  "exemptions": [
+    "chronic medication on CDL",
+    "designated service provider network",
+    "certain preventative care"
+  ],
+  "notes": "any important notes about copayment structures"
+}
+```
+
+Rules:
+- Use EXACT values from the document
+- If information is not found, use null
+- Express monetary values as numbers
+- Distinguish between network and non-network copayments
+- Note any annual copayment caps or limits
+- Identify exemptions (e.g., CDL medications, PMBs)
+- Look for: per admission, per day, per visit, percentage of tariff
+
+Document text:
+{{context}}

@@ -2,6 +2,7 @@ package cc.zynafin.medaid.repository
 
 import cc.zynafin.medaid.domain.Plan
 import cc.zynafin.medaid.domain.PlanType
+import cc.zynafin.medaid.domain.extraction.ExtractionStatus
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -37,4 +38,6 @@ interface PlanRepository : JpaRepository<Plan, UUID> {
     fun findAllPlanYears(): List<Int>
 
     fun findBySchemeAndPlanNameAndPlanYear(scheme: String, planName: String, planYear: Int): Plan?
+
+    fun findByExtractionStatus(extractionStatus: ExtractionStatus): List<Plan>
 }

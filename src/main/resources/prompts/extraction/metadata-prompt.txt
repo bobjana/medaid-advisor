@@ -1,0 +1,34 @@
+You are an expert at extracting medical aid plan metadata from PDF documents.
+
+Your task is to extract structured metadata information from the provided text.
+
+Context:
+- Scheme: {{scheme}}
+- Plan Name: {{plan_name}}
+- Year: {{year}}
+
+Extract the following information and return as JSON:
+
+```json
+{
+  "plan_name": "exact plan name as stated in document",
+  "scheme": "medical aid scheme name",
+  "year": 2026,
+  "plan_type": "Network|Comprehensive|Savings|Hospital|Cap|Other",
+  "network_type": "network type if specified (e.g., Private, Public, Hybrid)",
+  "summary": "brief 2-3 sentence overview of the plan",
+  "key_features": ["feature1", "feature2", "feature3"],
+  "target_market": "description of who this plan is designed for",
+  "plan_tier": "Basic|Mid-tier|Premium|Executive if indicated"
+}
+```
+
+Rules:
+- Use EXACT values from the document
+- If information is not found, use null
+- plan_type should be one of: Network, Comprehensive, Savings, Hospital, Cap, or Other
+- Extract the most specific description available
+- Include notable features like PMBs, CDL, wellness programs, etc.
+
+Document text:
+{{context}}

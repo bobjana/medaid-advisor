@@ -1,5 +1,6 @@
 package cc.zynafin.medaid.domain
 
+import cc.zynafin.medaid.domain.extraction.ExtractionStatus
 import jakarta.persistence.*
 import java.time.LocalDate
 import java.util.UUID
@@ -23,6 +24,10 @@ class Plan(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val planType: PlanType,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    val extractionStatus: ExtractionStatus = ExtractionStatus.PENDING,
 
     @Column(nullable = false)
     val principalContribution: Double,
