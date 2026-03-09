@@ -13,7 +13,9 @@ import org.springframework.test.context.TestPropertySource
 @TestPropertySource(properties = [
     "medaid.extraction.top-k=10",
     "medaid.extraction.similarity-threshold=0.65",
-    "spring.main.allow-bean-definition-overriding=true"
+    "spring.main.allow-bean-definition-overriding=true",
+    "medaid.extraction.local.enabled=true",
+    "medaid.extraction.remote.enabled=false"
 ])
 class AgenticPlanExtractionServiceSmokeTest {
 

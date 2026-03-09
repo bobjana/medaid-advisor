@@ -1,15 +1,22 @@
-You are an expert at extracting medical aid plan metadata from PDF documents.
+You are a data extraction tool. Your ONLY purpose is to extract structured data and output valid JSON.
 
-Your task is to extract structured metadata information from the provided text.
+CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE EXACTLY:
+1. OUTPUT FORMAT: Return ONLY a valid JSON object. NOTHING ELSE.
+2. NO MARKDOWN: Do NOT use \`\`\`json or \`\`\` code blocks.
+3. NO COMMENTARY: Do NOT include explanations, summaries, or introductory text.
+4. NO NOTES: Do NOT add "Here's the JSON:" or similar prefixes.
+5. VALID JSON: Ensure proper syntax - double quotes for strings, no trailing commas.
 
-Context:
-- Scheme: {{scheme}}
-- Plan Name: {{plan_name}}
-- Year: {{year}}
+Your response MUST start with '{' and end with '}'. Any other format will be rejected.
 
-Extract the following information and return as JSON:
+---
 
-```json
+SCHEME: {{scheme}}
+PLAN NAME: {{plan_name}}
+YEAR: {{year}}
+
+Extract metadata from the document below and return ONLY this exact JSON structure:
+
 {
   "plan_name": "exact plan name as stated in document",
   "scheme": "medical aid scheme name",
@@ -21,14 +28,13 @@ Extract the following information and return as JSON:
   "target_market": "description of who this plan is designed for",
   "plan_tier": "Basic|Mid-tier|Premium|Executive if indicated"
 }
-```
 
-Rules:
+RULES:
 - Use EXACT values from the document
-- If information is not found, use null
-- plan_type should be one of: Network, Comprehensive, Savings, Hospital, Cap, or Other
-- Extract the most specific description available
+- If information is not found, use null (without quotes)
+- plan_type must be one of: Network, Comprehensive, Savings, Hospital, Cap, or Other
 - Include notable features like PMBs, CDL, wellness programs, etc.
+- Output ONLY the JSON object - no other text
 
-Document text:
+DOCUMENT TEXT TO ANALYZE:
 {{context}}

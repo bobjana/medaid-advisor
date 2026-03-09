@@ -12,6 +12,8 @@ import java.util.UUID
 @Repository
 interface PlanRepository : JpaRepository<Plan, UUID> {
 
+    fun findByScheme(scheme: String): List<Plan>
+
     fun findBySchemeAndPlanYear(scheme: String, planYear: Int): List<Plan>
 
     fun findByPlanYear(planYear: Int): List<Plan>

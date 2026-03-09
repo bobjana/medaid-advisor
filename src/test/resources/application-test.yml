@@ -42,3 +42,13 @@ logging:
   level:
     cc.zynafin.medaid: DEBUG
     org.springframework.test: DEBUG
+
+# LLM Configuration for tests
+medaid:
+  extraction:
+    agentic-enabled: false  # Disable for tests
+    local:
+      enabled: true  # Enable local LLM for tests
+      json-mode: false  # Disable JSON mode for tests (using mocks)
+    remote:
+      enabled: false  # Disable remote LLM for tests

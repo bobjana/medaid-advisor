@@ -169,19 +169,33 @@
                         </goals>
                     </execution>
                 </executions>
-                <configuration>
-                    <jvmTarget>${java.version}</jvmTarget>
-                    <compilerPlugins>
+<configuration>
+<jvmTarget>${java.version}</jvmTarget>
+<compilerPlugins>
                         <plugin>jpa</plugin>
+                        <plugin>all-open</plugin>
                     </compilerPlugins>
-                </configuration>
-                <dependencies>
+                    <pluginOptions>
+                        <option>all-open:annotation=org.springframework.stereotype.Service</option>
+                        <option>all-open:annotation=org.springframework.stereotype.Component</option>
+                        <option>all-open:annotation=org.springframework.stereotype.Repository</option>
+                        <option>all-open:annotation=org.springframework.stereotype.Controller</option>
+                        <option>all-open:annotation=org.springframework.web.bind.annotation.RestController</option>
+                        <option>all-open:annotation=org.springframework.context.annotation.Configuration</option>
+                    </pluginOptions>
+</configuration>
+<dependencies>
+<dependency>
+<groupId>org.jetbrains.kotlin</groupId>
+<artifactId>kotlin-maven-noarg</artifactId>
+<version>${kotlin.version}</version>
+                    </dependency>
                     <dependency>
                         <groupId>org.jetbrains.kotlin</groupId>
-                        <artifactId>kotlin-maven-noarg</artifactId>
+                        <artifactId>kotlin-maven-allopen</artifactId>
                         <version>${kotlin.version}</version>
                     </dependency>
-                </dependencies>
+</dependencies>
             </plugin>
         </plugins>
     </build>

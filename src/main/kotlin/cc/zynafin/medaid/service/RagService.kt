@@ -270,7 +270,7 @@ open class RagService(
     fun search(query: String, topK: Int = 5): List<Document> {
         val searchRequest = SearchRequest.query(query)
             .withTopK(topK)
-            .withSimilarityThreshold(0.7)
+            .withSimilarityThreshold(0.0)
 
         return vectorStore.similaritySearch(searchRequest)
     }

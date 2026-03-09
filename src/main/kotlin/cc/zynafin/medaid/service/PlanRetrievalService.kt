@@ -2,22 +2,44 @@ package cc.zynafin.medaid.service
 
 import cc.zynafin.medaid.domain.extraction.SectionExtractionResult
 import cc.zynafin.medaid.domain.extraction.SourceCitation
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
-import org.springframework.ai.document.Document
-import org.springframework.ai.vectorstore.SearchRequest
-import org.springframework.ai.vectorstore.VectorStore
+import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.core.RowMapper
 import org.springframework.stereotype.Service
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.web.client.RestTemplate
+import java.sql.ResultSet
 
 @Service
 open class PlanRetrievalService(
-    private val vectorStore: VectorStore,
+    private val jdbcTemplate: JdbcTemplate,
     @Value("\${medaid.extraction.top-k:10}")
     private val topK: Int,
     @Value("\${medaid.extraction.similarity-threshold:0.65}")
-    private val similarityThreshold: Double
+    private val similarityThreshold: Double,
+    @Value("\${OLLAMA_BASE_URL:http://localhost:11434}")
+    private val ollamaBaseUrl: String
 ) {
     private val log = LoggerFactory.getLogger(PlanRetrievalService::class.java)
+    private val objectMapper = ObjectMapper()
+    private val restTemplate = RestTemplate()
+
+    private data class DocResult(
+        val id: String,
+        val content: String,
+        val metadata: Map<String, Any>,
+        val distance: Double
+    )
+
+    private val docResultMapper = RowMapper { rs: ResultSet, _: Int ->
+        val id = rs.getString("id")
+        val content = rs.getString("content")
+        val metadataJson = rs.getString("metadata")
+        val distance = rs.getDouble("distance")
+        val metadata = objectMapper.readValue(metadataJson, Map::class.java) as Map<String, Any>
+        DocResult(id, content, metadata, distance)
+    }
 
     fun retrieveForMetadata(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
         val query = buildMetadataQuery(scheme, planName, year)
@@ -41,12 +63,45 @@ open class PlanRetrievalService(
 
     private fun retrieveRelevantChunks(query: String, scheme: String, planName: String, year: Int, section: String): SectionExtractionResult<String> {
         return try {
-            val searchRequest = SearchRequest.query(query)
-                .withTopK(topK)
-                .withSimilarityThreshold(similarityThreshold)
-
-            val results = vectorStore.similaritySearch(searchRequest)
-
+            val embedding = generateEmbedding(query)
+            
+            if (embedding == null) {
+                log.error("Failed to generate embedding for query: $query")
+                return SectionExtractionResult(
+                    data = "",
+                    confidence = 0.0,
+                    sourceChunks = emptyList(),
+                    retryAttempts = 0,
+                    errorMessage = "Failed to generate embedding"
+                )
+            }
+            
+            // Convert embedding to PostgreSQL vector string format
+            val embeddingVector = embedding.joinToString(",", prefix = "[", postfix = "]")
+            
+            // Use PostgreSQL vector type for similarity search
+            // Using ?::vector syntax for proper string to vector conversion
+            val sql = """
+                SELECT id, content, metadata, embedding <=> (?::vector) as distance
+                FROM vector_store
+                WHERE metadata->>'scheme' = ?
+                  AND metadata->>'plan_name' = ?
+                  AND (metadata->>'year')::int = ?
+                ORDER BY embedding <=> (?::vector)
+                LIMIT ?
+            """.trimIndent()
+            
+            log.debug("Executing retrieval SQL for scheme=$scheme, planName=$planName, year=$year")
+            log.debug("Executing SQL with params: embedding=${embeddingVector.take(50)}..., scheme=$scheme, planName=$planName, year=$year, topK=$topK")
+            
+            // Parameters: embedding (SELECT), scheme, planName, year, embedding (ORDER BY), topK
+            val results = try {
+                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
+            } catch (e: Exception) {
+                log.error("SQL execution error: ${e.message}", e)
+                emptyList()
+            }
+            
             if (results.isEmpty()) {
                 log.warn("No relevant chunks found for section=$section query=$query")
                 return SectionExtractionResult(
@@ -57,37 +112,24 @@ open class PlanRetrievalService(
                     errorMessage = "No relevant chunks found for $section"
                 )
             }
-
-            val filteredResults = filterByPlanMetadata(results, scheme, planName, year)
-
-            if (filteredResults.isEmpty()) {
-                log.warn("Chunks found but none match plan metadata scheme=$scheme plan=$planName year=$year")
-                return SectionExtractionResult(
-                    data = "",
-                    confidence = 0.0,
-                    sourceChunks = emptyList(),
-                    retryAttempts = 0,
-                    errorMessage = "Chunks found but none match plan metadata"
-                )
-            }
-
-            val sourceChunks = filteredResults.map { doc ->
+            
+            val sourceChunks = results.map { doc ->
                 SourceCitation(
                     chunkId = doc.id,
                     content = doc.content,
                     pageNumber = doc.metadata["page_number"] as? Int ?: 0,
-                    similarityScore = doc.metadata["distance"] as? Double ?: 0.0
+                    similarityScore = doc.distance
                 )
             }
 
-            val combinedContent = filteredResults.joinToString("\n\n") { it.content }
-            val avgSimilarity = filteredResults.map { it.metadata["distance"] as? Double ?: 0.0 }.average()
+            val combinedContent = results.joinToString("\n\n") { it.content }
+            val avgDistance = results.map { it.distance }.average()
 
-            log.info("Retrieved ${filteredResults.size} chunks for section=$section with avg similarity: ${1 - avgSimilarity}")
+            log.info("Retrieved ${results.size} chunks for section=$section with avg distance: $avgDistance")
 
             SectionExtractionResult(
                 data = combinedContent,
-                confidence = 1 - avgSimilarity,
+                confidence = 1.0 - avgDistance,
                 sourceChunks = sourceChunks,
                 retryAttempts = 0,
                 errorMessage = null
@@ -104,17 +146,24 @@ open class PlanRetrievalService(
         }
     }
 
-    private fun filterByPlanMetadata(documents: List<Document>, scheme: String, planName: String, year: Int): List<Document> {
-        return documents.filter { doc ->
-            val docScheme = doc.metadata["scheme"] as? String
-            val docPlanName = doc.metadata["plan_name"] as? String
-            val docYear = doc.metadata["year"] as? Int
-
-            val schemeMatch = docScheme?.equals(scheme, ignoreCase = true) ?: false
-            val planMatch = docPlanName?.equals(planName, ignoreCase = true) ?: false
-            val yearMatch = docYear == year
-
-            schemeMatch && planMatch && yearMatch
+    private fun generateEmbedding(text: String): List<Double>? {
+        return try {
+            val request = mapOf(
+                "model" to "nomic-embed-text",
+                "prompt" to text
+            )
+            
+            val response = restTemplate.postForObject(
+                "$ollamaBaseUrl/api/embeddings",
+                request,
+                Map::class.java
+            )
+            
+            @Suppress("UNCHECKED_CAST")
+            response?.get("embedding") as? List<Double>
+        } catch (e: Exception) {
+            log.error("Error generating embedding", e)
+            null
         }
     }
 

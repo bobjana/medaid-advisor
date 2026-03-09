@@ -29,18 +29,11 @@ spring:
   sql:
     init:
       mode: never
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
 
   # Spring AI Configuration - OpenAI (pointing to Ollama endpoint)
   ai:
     openai:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}/v1
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       api-key: ${OPENAI_API_KEY:sk-dummy}
       chat:
         enabled: true
@@ -84,7 +77,7 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
 
-#KZ|# Custom configuration
+# Custom configuration
 medaid:
   documents:
     source-path: ${MEDAID_DOCS_PATH:~/Documents/medaids}
@@ -96,11 +89,23 @@ medaid:
       coverage: 0.40
       convenience: 0.15
       risk: 0.15
-99|  extraction:
-100|YQ|    agentic-enabled: false
-101|HM|    confidence-threshold-local: 0.75
-102|MH|    confidence-threshold-review: 0.6
-103|RN|    remote-llm:
-104|JX|      base-url: ${REMOTE_LLM_BASE_URL:}
-105|TJ|      model: ${REMOTE_LLM_MODEL:}
-106|YB|      api-key: ${REMOTE_LLM_API_KEY:}
+  extraction:
+    agentic-enabled: true
+    similarity-threshold: 0.0
+    confidence-threshold-local: 0.75
+    confidence-threshold-review: 0.6
+    local-threshold: 0.75
+    local:
+      enabled: ${LOCAL_LLM_ENABLED:true}
+      json-mode: ${LOCAL_LLM_JSON_MODE:true}
+    remote:
+      enabled: ${REMOTE_LLM_ENABLED:false}
+      url: ${REMOTE_LLM_URL:https://openrouter.ai/api/v1}
+      model: ${REMOTE_LLM_MODEL:google/gemma-3-4b-it:free}
+      api-key: ${REMOTE_LLM_API_KEY:}
+      
+# Override defaults via environment:
+# LOCAL_LLM_ENABLED=false
+# REMOTE_LLM_ENABLED=true
+# REMOTE_LLM_MODEL=google/gemma-3-4b-it:free
+# REMOTE_LLM_URL=https://openrouter.ai/api/v1

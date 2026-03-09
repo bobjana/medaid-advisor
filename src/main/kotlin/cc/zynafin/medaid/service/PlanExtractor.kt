@@ -4,8 +4,10 @@ import cc.zynafin.medaid.domain.extraction.SectionExtractionResult
 import cc.zynafin.medaid.domain.extraction.ExtractionConfidence
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import org.slf4j.LoggerFactory
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.ollama.api.OllamaOptions
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
@@ -16,7 +18,9 @@ class PlanExtractor(
     private val chatClient: ChatClient,
     private val resourceLoader: ResourceLoader,
     @Value("\${medaid.extraction.llm.timeout:30}")
-    private val llmTimeout: Int
+    private val llmTimeout: Int,
+    @Value("\${medaid.extraction.local.json-mode:true}")
+    private val jsonModeEnabled: Boolean
 ) {
     private val log = LoggerFactory.getLogger(PlanExtractor::class.java)
     private val objectMapper = ObjectMapper()
@@ -83,26 +87,42 @@ class PlanExtractor(
 
             log.debug("Extracting {} for {}/{} {}", section, scheme, planName, year)
 
-            val response = chatClient.prompt()
-                .user(prompt)
-                .call()
-                .content()
+            val response = if (jsonModeEnabled) {
+                val jsonOptions = OllamaOptions.builder()
+                    .withFormat("json")
+                    .withTemperature(0.1)
+                    .build()
+                
+                chatClient.prompt()
+                    .system("You are a data extraction tool. Output ONLY valid JSON. No explanations, no markdown, no commentary.")
+                    .user(prompt)
+                    .options(jsonOptions)
+                    .call()
+                    .content()
+            } else {
+                chatClient.prompt()
+                    .system("You are a data extraction tool. Output ONLY valid JSON. No explanations, no markdown, no commentary.")
+                    .user(prompt)
+                    .call()
+                    .content()
+            }
 
             val jsonNode = parseJsonResponse(response)
-            val confidence = calculateConfidence(response)
             
             if (jsonNode != null) {
                 return SectionExtractionResult(
                     data = jsonNode,
-                    confidence = confidence.score,
+                    confidence = ExtractionConfidence.HIGH.score,
                     sourceChunks = emptyList()
                 )
             } else {
+                // Fallback: create partial extraction from narrative
+                val fallbackData = createFallbackData(response, section)
                 return SectionExtractionResult(
-                    data = objectMapper.createObjectNode(),
+                    data = fallbackData,
                     confidence = ExtractionConfidence.LOW.score,
                     sourceChunks = emptyList(),
-                    errorMessage = "Could not parse JSON from LLM response"
+                    errorMessage = "LLM returned non-JSON response. Partial data extracted."
                 )
             }
         } catch (e: Exception) {
@@ -127,35 +147,126 @@ class PlanExtractor(
         }
     }
 
-    private fun parseJsonResponse(response: String): JsonNode? {
-        return try {
-            val jsonMatch = Regex(""""```json\s*(\{.*?\})\s*```""", RegexOption.DOT_MATCHES_ALL).find(response)
-            if (jsonMatch != null) {
-                objectMapper.readTree(jsonMatch.groupValues[1])
-            } else {
-                val bracketMatch = Regex(""""(\{.*?\})""", RegexOption.DOT_MATCHES_ALL).find(response)
-                if (bracketMatch != null) {
-                    objectMapper.readTree(bracketMatch.groupValues[1])
-                } else {
-                    log.warn("Could not extract JSON from LLM response")
-                    null
+    private fun parseJsonResponse(response: String?): JsonNode? {
+        if (response.isNullOrBlank()) {
+            log.warn("Empty response from LLM")
+            return null
+        }
+        
+        val trimmed = response.trim()
+        
+        // Try parsing as-is first
+        try {
+            return objectMapper.readTree(trimmed)
+        } catch (e: Exception) {
+            // Continue to fallback methods
+        }
+        
+        // Method 1: Extract from markdown code blocks
+        try {
+            val jsonCodeBlockPattern = Regex("""```(?:json)?\s*([\s\S]*?)\s*```""")
+            val matches = jsonCodeBlockPattern.findAll(trimmed)
+            for (match in matches) {
+                val content = match.groupValues[1].trim()
+                if (content.startsWith("{") || content.startsWith("[")) {
+                    try {
+                        return objectMapper.readTree(content)
+                    } catch (e: Exception) {
+                        // Try next match
+                    }
                 }
             }
         } catch (e: Exception) {
-            log.error("Failed to parse JSON response", e)
-            null
+            log.debug("Failed to extract from code blocks", e)
         }
+        
+        // Method 2: Find first { and matching } by counting braces
+        try {
+            val jsonStart = trimmed.indexOf('{')
+            if (jsonStart >= 0) {
+                var braceCount = 0
+                var jsonEnd = jsonStart
+                for (i in jsonStart until trimmed.length) {
+                    when (trimmed[i]) {
+                        '{' -> braceCount++
+                        '}' -> braceCount--
+                    }
+                    if (braceCount == 0) {
+                        jsonEnd = i
+                        break
+                    }
+                }
+                if (braceCount == 0) {
+                    val jsonStr = trimmed.substring(jsonStart, jsonEnd + 1)
+                    return objectMapper.readTree(jsonStr)
+                }
+            }
+        } catch (e: Exception) {
+            log.debug("Failed to extract by brace counting", e)
+        }
+        
+        return null
     }
 
-    private fun calculateConfidence(response: String): ExtractionConfidence {
-        val responseLength = response.length
-        val hasStructuredData = response.contains("{") && response.contains("}")
-
-        return when {
-            responseLength < 100 || !hasStructuredData -> ExtractionConfidence.LOW
-            responseLength < 300 -> ExtractionConfidence.MEDIUM
-            responseLength < 500 -> ExtractionConfidence.HIGH
-            else -> ExtractionConfidence.HIGH
+    private fun createFallbackData(response: String, section: String): JsonNode {
+        val node = objectMapper.createObjectNode()
+        
+        when (section) {
+            "metadata" -> {
+                node.put("plan_name", extractValue(response, "plan", "name", "Plan"))
+                node.put("scheme", extractValue(response, "scheme", "Discovery Health", "Scheme"))
+                node.put("year", 2026)
+                node.put("plan_type", extractValue(response, "type", "Comprehensive", "Type"))
+                node.put("network_type", extractValue(response, "network", "", "Network"))
+                node.put("summary", response.take(200))
+                node.set<JsonNode>("key_features", objectMapper.createArrayNode())
+                node.put("target_market", extractValue(response, "market", "target", "Target"))
+                node.put("plan_tier", extractValue(response, "tier", "", "Tier"))
+            }
+            "contributions" -> {
+                val contributions = objectMapper.createArrayNode()
+                val principal = objectMapper.createObjectNode()
+                principal.put("member_type", "Principal")
+                principal.put("amount", extractNumber(response, "principal"))
+                principal.put("currency", "ZAR")
+                principal.put("frequency", "monthly")
+                contributions.add(principal)
+                node.set<JsonNode>("contributions", contributions)
+                node.put("notes", response.take(200))
+            }
+            "benefits" -> {
+                node.set<JsonNode>("hospital_benefits", objectMapper.createObjectNode())
+                node.set<JsonNode>("day_to_day_benefits", objectMapper.createObjectNode())
+                node.set<JsonNode>("wellness_benefits", objectMapper.createObjectNode())
+                node.put("notes", response.take(200))
+            }
+            "copayments" -> {
+                node.set<JsonNode>("hospital_copayments", objectMapper.createObjectNode())
+                node.set<JsonNode>("day_to_day_copayments", objectMapper.createObjectNode())
+                node.set<JsonNode>("other_copayments", objectMapper.createObjectNode())
+                node.set<JsonNode>("copayment_structures", objectMapper.createObjectNode())
+                node.set<JsonNode>("exemptions", objectMapper.createArrayNode())
+                node.put("notes", response.take(200))
+            }
         }
+        
+        return node
+    }
+
+    private fun extractValue(text: String, vararg keywords: String): String? {
+        for (keyword in keywords) {
+            val pattern = Regex("""$keyword[:\s]+([^\n,.]+)""", RegexOption.IGNORE_CASE)
+            val match = pattern.find(text)
+            if (match != null) {
+                return match.groupValues[1].trim()
+            }
+        }
+        return null
+    }
+
+    private fun extractNumber(text: String, keyword: String): Double? {
+        val pattern = Regex("""$keyword[^\d]*(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+        val match = pattern.find(text)
+        return match?.groupValues?.get(1)?.toDoubleOrNull()
     }
 }

@@ -181,6 +181,136 @@ GET /api/v1/rag/search?query=What is covered in hospital&topK=5
 GET /api/v1/rag/explain?query=How does the Medical Savings Account work?
 ```
 
+### Agentic Plan Extraction
+```bash
+#### Get LLM Explanation (RAG-powered)
+```bash
+GET /api/v1/rag/explain?query=How does the Medical Savings Account work?
+```
+
+### Agentic Plan Extraction
+
+Automatically extract structured plan data from PDF documents using LLM-based extraction with confidence scoring and human review workflow.
+
+#### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Controller    │────▶│    Service      │────▶│  LLM Router     │
+│ (batch-extract) │     │ (AgenticPlan    │     │ (Local/Remote)  │
+└─────────────────┘     │  Extraction)    │     └─────────────────┘
+                        └─────────────────┘              │
+                                │                        ▼
+                                ▼               ┌─────────────────┐
+                        ┌─────────────────┐     │  PlanExtractor  │
+                        │PlanRetrievalSvc │────▶│  (4 sections)   │
+                        │ (Vector DB)     │     └─────────────────┘
+                        └─────────────────┘
+```
+
+#### Extraction Flow
+
+1. **Batch Request** (`POST /api/v1/plans/batch-extract`)
+   - Filter by scheme and/or year
+   - Load plans from database
+
+2. **Per-Plan Extraction** (4 sections):
+   - **Metadata**: Plan type, network tier, MSA status
+   - **Contributions**: Principal, adult, child dependent rates
+   - **Benefits**: Hospital, chronic, day-to-day coverage
+   - **Copayments**: Specialist, medication, procedure fees
+
+3. **LLM Routing** (`LlmRouter`):
+   - **Local** (Ollama/llama3.2): Default, runs locally
+   - **Remote** (Kimi): Fallback when confidence < threshold or `LOCAL_LLM_ENABLED=false`
+
+4. **Confidence Scoring**:
+   - Each section gets confidence score (0.0-1.0)
+   - Overall confidence calculated from section scores
+   - Thresholds: `confidence-threshold-local: 0.75`
+
+5. **Extraction Status**:
+   - `VALIDATED`: Confidence ≥ 0.8, no errors
+   - `PENDING_REVIEW`: Confidence 0.6-0.8 or validation warnings
+   - `FAILED`: Errors or confidence < 0.6
+
+#### API Examples
+
+**Extract single plan:**
+```bash
+POST /api/v1/plans/Discovery%20Health/Classic%20Priority/2026/extract
+```
+
+**Batch extract all plans for a scheme:**
+```bash
+POST /api/v1/plans/batch-extract?scheme=Discovery%20Health&year=2026
+```
+
+Response:
+```json
+{
+  "total": 5,
+  "success": 3,
+  "failed": 1,
+  "pending_review": 1,
+  "results": [...]
+}
+```
+
+**Check extraction status:**
+```bash
+GET /api/v1/plans/Discovery%20Health/Classic%20Priority/2026/extraction-status
+```
+
+**Approve extraction (after review):**
+```bash
+POST /api/v1/plans/Discovery%20Health/Classic%20Priority/2026/approve
+```
+
+**Reject extraction (with reason):**
+```bash
+POST /api/v1/plans/Discovery%20Health/Classic%20Priority/2026/reject
+Content-Type: application/json
+
+{
+  "reason": "Incorrect contribution amounts for principal member"
+}
+```
+
+#### Configuration
+
+```yaml
+medaid:
+  extraction:
+    agentic-enabled: false        # Feature flag
+    local-threshold: 0.75         # Fallback to remote below this
+    local:
+      enabled: true               # Set false for remote-only
+    remote:
+      enabled: false
+      url: ${REMOTE_LLM_URL:}     # e.g., https://api.moonshot.cn/v1
+      model: kimi-k2p5
+      api-key: ${REMOTE_LLM_API_KEY:}
+```
+
+#### Environment Variables
+
+```bash
+# Use local Ollama only (default)
+export LOCAL_LLM_ENABLED=true
+
+# Use remote Kimi exclusively
+export LOCAL_LLM_ENABLED=false
+export REMOTE_LLM_ENABLED=true
+export REMOTE_LLM_URL=https://api.moonshot.cn/v1
+export REMOTE_LLM_API_KEY=your-api-key
+
+just run
+```
+
+### Plans
+```
+
 ### Plans
 
 #### List All Plans

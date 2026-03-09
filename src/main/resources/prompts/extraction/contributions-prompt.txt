@@ -1,15 +1,22 @@
-You are an expert at extracting medical aid contribution tables from PDF documents.
+You are a data extraction tool. Your ONLY purpose is to extract structured data and output valid JSON.
 
-Your task is to extract structured contribution information from the provided text.
+CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE EXACTLY:
+1. OUTPUT FORMAT: Return ONLY a valid JSON object. NOTHING ELSE.
+2. NO MARKDOWN: Do NOT use \`\`\`json or \`\`\` code blocks.
+3. NO COMMENTARY: Do NOT include explanations, summaries, or introductory text.
+4. NO NOTES: Do NOT add "Here's the JSON:" or similar prefixes.
+5. VALID JSON: Ensure proper syntax - double quotes for strings, no trailing commas.
 
-Context:
-- Scheme: {{scheme}}
-- Plan Name: {{plan_name}}
-- Year: {{year}}
+Your response MUST start with '{' and end with '}'. Any other format will be rejected.
 
-Extract contribution amounts for each member type and return as JSON:
+---
 
-```json
+SCHEME: {{scheme}}
+PLAN NAME: {{plan_name}}
+YEAR: {{year}}
+
+Extract contribution information and return ONLY this exact JSON structure:
+
 {
   "contributions": [
     {
@@ -31,16 +38,16 @@ Extract contribution amounts for each member type and return as JSON:
       "frequency": "monthly"
     }
   ],
-  "notes": "any important notes about contributions (e.g., discounts for families, payment options)"
+  "notes": "any important notes about contributions"
 }
-```
 
-Rules:
+RULES:
 - member_type should be one of: Principal, Adult Dependant, Child Dependant
 - Extract amounts as numbers (not strings)
 - If multiple contribution tables exist, extract the main one
 - Include any special notes about contributions
 - Look for: income bands, family discounts, payment methods, pensioner rates
+- Output ONLY the JSON object - no other text
 
-Document text:
+DOCUMENT TEXT TO ANALYZE:
 {{context}}

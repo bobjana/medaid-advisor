@@ -13,6 +13,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @Service
 open class AgenticPlanExtractionService(
@@ -25,6 +28,7 @@ open class AgenticPlanExtractionService(
 ) {
     private val log = LoggerFactory.getLogger(AgenticPlanExtractionService::class.java)
     private val objectMapper = ObjectMapper()
+    private val executor: ExecutorService = Executors.newFixedThreadPool(4)
 
     @Transactional
     fun extractPlan(scheme: String, planName: String, year: Int): JsonPlanExtractionResult {
@@ -49,21 +53,39 @@ open class AgenticPlanExtractionService(
         }
 
         try {
-            val metadataResult = extractSection(plan, "metadata") {
-                llmRouter.extractMetadataWithRouting(it.data, scheme, planName, year)
-            }
 
-            val contributionsResult = extractSection(plan, "contributions") {
-                llmRouter.extractContributionsWithRouting(it.data, scheme, planName, year)
-            }
+            // Run all section extractions in parallel
+            val metadataFuture = CompletableFuture.supplyAsync({
+                extractSection(plan, "metadata") {
+                    llmRouter.extractMetadataWithRouting(it.data, scheme, planName, year)
+                }
+            }, executor)
 
-            val benefitsResult = extractSection(plan, "benefits") {
-                llmRouter.extractBenefitsWithRouting(it.data, scheme, planName, year)
-            }
+            val contributionsFuture = CompletableFuture.supplyAsync({
+                extractSection(plan, "contributions") {
+                    llmRouter.extractContributionsWithRouting(it.data, scheme, planName, year)
+                }
+            }, executor)
 
-            val copaymentsResult = extractSection(plan, "copayments") {
-                llmRouter.extractCopaymentsWithRouting(it.data, scheme, planName, year)
-            }
+            val benefitsFuture = CompletableFuture.supplyAsync({
+                extractSection(plan, "benefits") {
+                    llmRouter.extractBenefitsWithRouting(it.data, scheme, planName, year)
+                }
+            }, executor)
+
+            val copaymentsFuture = CompletableFuture.supplyAsync({
+                extractSection(plan, "copayments") {
+                    llmRouter.extractCopaymentsWithRouting(it.data, scheme, planName, year)
+                }
+            }, executor)
+
+            // Wait for all to complete
+            CompletableFuture.allOf(metadataFuture, contributionsFuture, benefitsFuture, copaymentsFuture).join()
+
+            val metadataResult = metadataFuture.join()
+            val contributionsResult = contributionsFuture.join()
+            val benefitsResult = benefitsFuture.join()
+            val copaymentsResult = copaymentsFuture.join()
 
             val overallConfidence = calculateOverallConfidence(
                 *arrayOf(metadataResult, contributionsResult, benefitsResult, copaymentsResult)
