@@ -106,7 +106,9 @@ class PlanExtractor(
                     .call()
                     .content()
             }
-
+            
+            log.info("[PlanExtractor] LLM Response for $section: {}", response?.take(500))
+            
             val jsonNode = parseJsonResponse(response)
             
             if (jsonNode != null) {

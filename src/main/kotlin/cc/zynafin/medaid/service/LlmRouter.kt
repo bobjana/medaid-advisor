@@ -11,8 +11,10 @@ import org.springframework.ai.openai.OpenAiChatOptions
 import org.springframework.ai.openai.api.OpenAiApi
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.DefaultResourceLoader
+import org.springframework.core.io.FileSystemResource
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
+
 
 @Service
 open class LlmRouter(
@@ -27,21 +29,44 @@ open class LlmRouter(
     private val remoteUrl: String?,
     @Value("\${medaid.extraction.remote.api-key:}")
     private val remoteApiKey: String?,
-    @Value("\${REMOTE_LLM_MODEL:google/gemma-3-4b-it:free}")
+    @Value("\${medaid.extraction.remote.model:gemini-1.5-flash}")
     private val remoteModel: String
 ) {
     private val log = LoggerFactory.getLogger(LlmRouter::class.java)
     private val objectMapper = ObjectMapper()
     
+    // Load API key from secret file if not provided via environment variable
+    private val effectiveApiKey: String? by lazy {
+        remoteApiKey?.takeIf { it.isNotBlank() } 
+            ?: loadApiKeyFromFile()
+    }
+    
     private val remotePlanExtractor: PlanExtractor? = initRemoteExtractor()
 
+    private fun loadApiKeyFromFile(): String? {
+        return try {
+            val secretFile = FileSystemResource(".secret_gemini_api_key")
+            if (secretFile.exists()) {
+                secretFile.inputStream.bufferedReader().use { it.readText().trim() }
+            } else {
+                log.warn("API key file .secret_gemini_api_key not found")
+                null
+            }
+        } catch (e: Exception) {
+            log.error("Failed to load API key from file: {}", e.message)
+            null
+        }
+    }
+
     private fun initRemoteExtractor(): PlanExtractor? {
-        if (!remoteEnabled || remoteUrl.isNullOrBlank() || remoteApiKey.isNullOrBlank()) {
-            log.info("Remote LLM is disabled or not configured")
+        val apiKey = effectiveApiKey
+        if (!remoteEnabled || remoteUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            log.info("Remote LLM is disabled or not configured - remoteEnabled: {}, url: {}, hasApiKey: {}", 
+                remoteEnabled, remoteUrl?.isNotBlank(), apiKey?.isNotBlank())
             return null
         }
         return try {
-            createRemoteExtractor(remoteUrl, remoteApiKey, remoteModel)
+            createRemoteExtractor(remoteUrl, apiKey, remoteModel)
         } catch (e: Exception) {
             log.error("Failed to create remote extractor: {}", e.message, e)
             null
@@ -69,7 +94,6 @@ open class LlmRouter(
         year: Int
     ): SectionExtractionResult<JsonNode> {
         return if (!localEnabled || (remoteEnabled && remotePlanExtractor != null)) {
-            // Use remote as primary
             try {
                 remotePlanExtractor?.extractMetadata(context, scheme, planName, year)
                     ?: if (localEnabled) localPlanExtractor.extractMetadata(context, scheme, planName, year)
@@ -220,20 +244,31 @@ open class LlmRouter(
     }
 
     companion object {
-        // Remote extractor creation - currently disabled, kept for future use
-        @Suppress("UNUSED")
+        private val log = LoggerFactory.getLogger(LlmRouter::class.java)
+        
         fun createRemoteExtractor(remoteUrl: String, apiKey: String, model: String): PlanExtractor {
-            val restClientBuilder = RestClient.builder()
-            if (remoteUrl.contains("openrouter")) {
-                restClientBuilder.requestInterceptor { request, body, execution ->
-                    request.headers.add("HTTP-Referer", "https://medaid-advisor.local")
-                    request.headers.add("X-Title", "MedAid Advisor")
-                    execution.execute(request, body)
-                }
+            log.info("Creating Vertex AI extractor - URL: $remoteUrl, Model: $model, hasApiKey: ${apiKey.isNotBlank()}")
+            
+            // Vertex AI API uses OpenAI-compatible endpoint at aiplatform.googleapis.com
+            // The endpoint format is: https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:streamGenerateContent
+            // But Spring AI's OpenAI client expects: baseUrl + /v1/chat/completions
+            
+            val baseUrl = if (remoteUrl.contains("aiplatform.googleapis.com")) {
+                // Use the OpenAI-compatible endpoint
+                "${remoteUrl}/v1"
+            } else {
+                remoteUrl
             }
             
-            // Use constructor with OpenAiApi
-            val api = OpenAiApi(remoteUrl, apiKey, restClientBuilder, org.springframework.web.reactive.function.client.WebClient.builder())
+            val restClientBuilder = RestClient.builder()
+            
+            // Create OpenAI API client pointing to Vertex AI endpoint
+            val api = OpenAiApi(
+                baseUrl,
+                apiKey,
+                restClientBuilder,
+                org.springframework.web.reactive.function.client.WebClient.builder()
+            )
             
             val options = OpenAiChatOptions.builder()
                 .withModel(model)

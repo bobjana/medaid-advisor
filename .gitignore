@@ -46,4 +46,4 @@ application-dev.yml
 application-secrets.yml
 
 data
-.secrets
+.secret*

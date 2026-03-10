@@ -30,29 +30,24 @@ spring:
     init:
       mode: never
 
-  # Spring AI Configuration - OpenAI (pointing to Ollama endpoint)
+  # Spring AI Configuration
   ai:
+    # Disable OpenAI completely - we use Ollama
     openai:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-      api-key: ${OPENAI_API_KEY:sk-dummy}
-      chat:
-        enabled: true
-        options:
-          model: ${OLLAMA_MODEL:llama3.2}
-          temperature: 0.7
-      embedding:
-        enabled: false  # Disable OpenAI embedding, use Ollama instead
+      enabled: false
+    # Ollama for embeddings AND chat (works correctly)
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
         enabled: true
         options:
-          model: ${OLLAMA_MODEL:llama3.2}
-          temperature: 0.7
+          model: llama3.2
+          temperature: 0.1
       embedding:
         enabled: true
         options:
           model: nomic-embed-text
+
     vectorstore:
       pgvector:
         dimension: 768  # nomic-embed-text dimension
@@ -95,17 +90,14 @@ medaid:
     confidence-threshold-local: 0.75
     confidence-threshold-review: 0.6
     local-threshold: 0.75
+    # Enable local Ollama for extraction
     local:
-      enabled: ${LOCAL_LLM_ENABLED:true}
+      enabled: true
       json-mode: ${LOCAL_LLM_JSON_MODE:true}
+    # Disable remote for now - using local Ollama
     remote:
-      enabled: ${REMOTE_LLM_ENABLED:false}
-      url: ${REMOTE_LLM_URL:https://openrouter.ai/api/v1}
-      model: ${REMOTE_LLM_MODEL:google/gemma-3-4b-it:free}
-      api-key: ${REMOTE_LLM_API_KEY:}
-      
-# Override defaults via environment:
-# LOCAL_LLM_ENABLED=false
-# REMOTE_LLM_ENABLED=true
-# REMOTE_LLM_MODEL=google/gemma-3-4b-it:free
-# REMOTE_LLM_URL=https://openrouter.ai/api/v1
+      enabled: false
+      # Gemini via Google Cloud Vertex AI
+      url: https://aiplatform.googleapis.com
+      model: gemini-2.5-flash-lite
+      api-key: ${GEMINI_API_KEY:}

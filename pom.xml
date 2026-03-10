@@ -44,7 +44,6 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-
         <!-- SpringDoc OpenAPI (Swagger UI) -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -81,12 +80,20 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-pgvector-store-spring-boot-starter</artifactId>
         </dependency>
-        <!-- Spring AI Ollama -->
+        
+        <!-- Spring AI Ollama (for local development) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
+            <optional>true</optional>
         </dependency>
+        
 
+        
+        <!-- Database -->
+        <!-- Spring AI Vertex AI (Gemini via Google Cloud) -->
+
+        
         <!-- Database -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -97,6 +104,7 @@
             <artifactId>pgvector</artifactId>
             <version>0.1.4</version>
         </dependency>
+        
         <!-- Flyway for database migrations -->
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -169,9 +177,9 @@
                         </goals>
                     </execution>
                 </executions>
-<configuration>
-<jvmTarget>${java.version}</jvmTarget>
-<compilerPlugins>
+                <configuration>
+                    <jvmTarget>${java.version}</jvmTarget>
+                    <compilerPlugins>
                         <plugin>jpa</plugin>
                         <plugin>all-open</plugin>
                     </compilerPlugins>
@@ -183,19 +191,19 @@
                         <option>all-open:annotation=org.springframework.web.bind.annotation.RestController</option>
                         <option>all-open:annotation=org.springframework.context.annotation.Configuration</option>
                     </pluginOptions>
-</configuration>
-<dependencies>
-<dependency>
-<groupId>org.jetbrains.kotlin</groupId>
-<artifactId>kotlin-maven-noarg</artifactId>
-<version>${kotlin.version}</version>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-noarg</artifactId>
+                        <version>${kotlin.version}</version>
                     </dependency>
                     <dependency>
                         <groupId>org.jetbrains.kotlin</groupId>
                         <artifactId>kotlin-maven-allopen</artifactId>
                         <version>${kotlin.version}</version>
                     </dependency>
-</dependencies>
+                </dependencies>
             </plugin>
         </plugins>
     </build>
