@@ -220,20 +220,17 @@ open class PlanRetrievalService(
 
     private fun buildCopaymentsQuery(scheme: String, planName: String, year: Int): String {
         return """
-            Extract copayment information from the plan document for:
-            - Scheme: $scheme
-            - Plan: $planName
-            - Year: $year
-
-            Look for:
-            - Hospital copayments (amount or percentage)
-            - Specialist copayments
-            - GP copayments
-            - Other co-payment structures
-            - Deductibles or excess amounts
-            - Any co-payment tiers or schedules
-
-            Extract all copayment amounts, their conditions, and how they apply.
+            Copayment amounts for Discovery Health $planName plan $year:
+            - Hospital admission copayments, theatre fees
+            - Specialist and GP consultation copayments  
+            - Chronic medication copayments
+            - Day-to-day benefit copayments
+            - Any deductibles, excess charges, or levies
+            - Network vs non-network copayment differences
+            - Maternity copayments (normal delivery vs cesarean)
+            - Scope procedures copayments
+            - Cancer treatment copayments
+            - All rand amounts and percentage copayments
         """.trimIndent()
     }
 }

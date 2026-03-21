@@ -15,10 +15,10 @@ import org.springframework.core.io.FileSystemResource
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
 
-
 @Service
 open class LlmRouter(
     private val localPlanExtractor: PlanExtractor,
+    private val googleGeminiChatModel: GoogleGeminiChatModel,
     @Value("\${medaid.extraction.local.enabled:true}")
     private val localEnabled: Boolean,
     @Value("\${medaid.extraction.local-threshold:0.75}")
@@ -66,7 +66,7 @@ open class LlmRouter(
             return null
         }
         return try {
-            createRemoteExtractor(remoteUrl, apiKey, remoteModel)
+            createRemoteExtractor(remoteUrl, apiKey, remoteModel, googleGeminiChatModel)
         } catch (e: Exception) {
             log.error("Failed to create remote extractor: {}", e.message, e)
             null
@@ -246,37 +246,12 @@ open class LlmRouter(
     companion object {
         private val log = LoggerFactory.getLogger(LlmRouter::class.java)
         
-        fun createRemoteExtractor(remoteUrl: String, apiKey: String, model: String): PlanExtractor {
-            log.info("Creating Vertex AI extractor - URL: $remoteUrl, Model: $model, hasApiKey: ${apiKey.isNotBlank()}")
+        fun createRemoteExtractor(remoteUrl: String, apiKey: String, model: String, googleChatModel: GoogleGeminiChatModel): PlanExtractor {
+            log.info("Creating remote extractor - URL: $remoteUrl, Model: $model, hasApiKey: ${apiKey.isNotBlank()}")
             
-            // Vertex AI API uses OpenAI-compatible endpoint at aiplatform.googleapis.com
-            // The endpoint format is: https://aiplatform.googleapis.com/v1/publishers/google/models/{model}:streamGenerateContent
-            // But Spring AI's OpenAI client expects: baseUrl + /v1/chat/completions
+            // For Google Gemini API, use the provided ChatModel
+            val chatClient = ChatClient.builder(googleChatModel).build()
             
-            val baseUrl = if (remoteUrl.contains("aiplatform.googleapis.com")) {
-                // Use the OpenAI-compatible endpoint
-                "${remoteUrl}/v1"
-            } else {
-                remoteUrl
-            }
-            
-            val restClientBuilder = RestClient.builder()
-            
-            // Create OpenAI API client pointing to Vertex AI endpoint
-            val api = OpenAiApi(
-                baseUrl,
-                apiKey,
-                restClientBuilder,
-                org.springframework.web.reactive.function.client.WebClient.builder()
-            )
-            
-            val options = OpenAiChatOptions.builder()
-                .withModel(model)
-                .withTemperature(0.1)
-                .build()
-            
-            val chatModel = OpenAiChatModel(api, options)
-            val chatClient = ChatClient.builder(chatModel).build()
             val resourceLoader = DefaultResourceLoader()
             
             return PlanExtractor(chatClient, resourceLoader, 60, false)

@@ -90,14 +90,14 @@ medaid:
     confidence-threshold-local: 0.75
     confidence-threshold-review: 0.6
     local-threshold: 0.75
-    # Enable local Ollama for extraction
+    # Disable local Ollama - using remote LLM instead
     local:
       enabled: true
       json-mode: ${LOCAL_LLM_JSON_MODE:true}
-    # Disable remote for now - using local Ollama
+    # Enable remote LLM (Gemini)
     remote:
       enabled: false
-      # Gemini via Google Cloud Vertex AI
-      url: https://aiplatform.googleapis.com
-      model: gemini-2.5-flash-lite
+      # Gemini API - direct format
+      url: https://generativelanguage.googleapis.com/v1beta
+      model: gemini-2.5-flash
       api-key: ${GEMINI_API_KEY:}
