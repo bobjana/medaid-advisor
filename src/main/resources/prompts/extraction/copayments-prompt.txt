@@ -101,6 +101,15 @@ Extract copayment information and return ONLY this exact JSON structure:
   "notes": "any important notes about copayment structures"
 }
 
+MARKDOWN TABLE PARSING:
+The context may contain Markdown-formatted copayment tables with pipe (|) separators. For example:
+| Service | Network | Non-Network |
+| --- | --- | --- |
+| GP Consultation | R0 | R350 |
+| Specialist | R250 | R600 |
+| Emergency Admission | R500 | R1,000 |
+Parse each table row by splitting on '|', ignoring the header separator row (--- cells). Map column headers (Service, Network, Non-Network, Amount, Per Admission, Per Day) to extract service types and copayment amounts from each data row. Strip 'R' prefix and commas from amounts before converting to numbers.
+
 RULES:
 - Use EXACT values from the document
 - If information is not found, use null (without quotes)

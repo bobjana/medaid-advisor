@@ -41,6 +41,15 @@ Extract contribution information and return ONLY this exact JSON structure:
   "notes": "any important notes about contributions"
 }
 
+MARKDOWN TABLE PARSING:
+The context may contain Markdown-formatted tables with pipe (|) separators. For example:
+| Member Type | Monthly Amount |
+| --- | --- |
+| Principal | R8,238 |
+| Adult Dependant | R4,119 |
+| Child | R1,648 |
+Parse each table row by splitting on '|', ignoring the header separator row (--- cells), and extracting the member type and amount from each data row. Strip the 'R' currency prefix and commas from amounts before converting to numbers.
+
 RULES:
 - member_type should be one of: Principal, Adult Dependant, Child Dependant
 - Extract amounts as numbers (not strings)

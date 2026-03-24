@@ -75,6 +75,14 @@ Extract benefit information and return ONLY this exact JSON structure:
   "notes": "any important notes about benefit limits or conditions"
 }
 
+MARKDOWN TABLE PARSING:
+The context may contain Markdown-formatted benefit tables with pipe (|) separators. For example:
+| Benefit | Limit | Coverage |
+| --- | --- | --- |
+| Hospital | Unlimited | 100% of scheme rate |
+| Specialist | R15,000 | 200% of scheme rate |
+Parse each table row by splitting on '|', ignoring the header separator row (--- cells). Map column headers (Benefit, Limit, Coverage) to extract benefit names, annual limits, and coverage percentages from each data row.
+
 RULES:
 - Use EXACT values from the document
 - If information is not found, use null (without quotes)
