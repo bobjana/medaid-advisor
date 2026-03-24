@@ -3,14 +3,22 @@ package cc.zynafin.medaid.service
 import cc.zynafin.medaid.domain.BenefitCategory
 import cc.zynafin.medaid.domain.MemberType
 import cc.zynafin.medaid.domain.PlanType
+import cc.zynafin.medaid.repository.ContributionRepository
+import cc.zynafin.medaid.repository.HospitalBenefitRepository
+import cc.zynafin.medaid.repository.PlanRepository
 import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 @Service
 @Transactional(readOnly = true)
-open class ExtractionValidationService {
+open class ExtractionValidationService(
+    private val planRepository: PlanRepository,
+    private val contributionRepository: ContributionRepository,
+    private val hospitalBenefitRepository: HospitalBenefitRepository
+) {
     private val log = LoggerFactory.getLogger(ExtractionValidationService::class.java)
 
     data class ValidationResult(
@@ -157,5 +165,46 @@ open class ExtractionValidationService {
         }
 
         return warnings
+    }
+
+    open fun validatePlanCompleteness(planId: UUID): ValidationResult {
+        val errors = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+
+        val plan = planRepository.findById(planId)
+        if (plan.isEmpty) {
+            errors.add("Plan not found with id: $planId")
+            return ValidationResult(
+                isValid = false,
+                errors = errors,
+                warnings = warnings
+            )
+        }
+
+        val planEntity = plan.get()
+
+        val contributions = contributionRepository.findByPlanId(planId)
+        if (contributions.isEmpty()) {
+            errors.add("Missing contributions for plan ${planEntity.scheme} - ${planEntity.planName} (${planEntity.planYear})")
+        }
+
+        val hospitalBenefits = hospitalBenefitRepository.findByPlanId(planId)
+        if (hospitalBenefits.isEmpty()) {
+            errors.add("Missing hospital benefits for plan ${planEntity.scheme} - ${planEntity.planName} (${planEntity.planYear})")
+        }
+
+        if (planEntity.copayments.isEmpty()) {
+            errors.add("Missing copayments for plan ${planEntity.scheme} - ${planEntity.planName} (${planEntity.planYear})")
+        }
+
+        if (errors.isNotEmpty()) {
+            log.warn("Plan completeness validation failed for planId={}: {}", planId, errors)
+        }
+
+        return ValidationResult(
+            isValid = errors.isEmpty(),
+            errors = errors,
+            warnings = warnings
+        )
     }
 }

@@ -210,38 +210,43 @@ open class RagService(
         val startTime = System.currentTimeMillis()
 
         val file = java.io.File(filePath)
-        val documents = mutableListOf<Document>()
+        val tableDocuments = mutableListOf<Document>()
+        val proseDocuments = mutableListOf<Document>()
+        var totalPages = 0
         
         val pdfDoc: PDDocument = Loader.loadPDF(file)
         pdfDoc.use { document ->
             val stripper = PDFTextStripper()
-            val totalPages = document.numberOfPages
+            totalPages = document.numberOfPages
 
             for (pageNum in 1..totalPages) {
                 stripper.startPage = pageNum
                 stripper.endPage = pageNum
                 val text = stripper.getText(document)
 
-                val meta = HashMap<String, Any>()
-                meta["page_number"] = pageNum
-                meta["total_pages"] = totalPages
+                val baseMetadata = HashMap<String, Any>()
+                baseMetadata["page_number"] = pageNum
+                baseMetadata["total_pages"] = totalPages
+                baseMetadata.putAll(metadata)
+                baseMetadata["file_path"] = filePath
 
-                documents.add(Document(
-                    "$filePath-page-$pageNum",
-                    text,
-                    meta
-                ))
+                if (detectTable(text)) {
+                    // Table detected - convert to prose and treat as atomic unit
+                    val prose = convertTableToProse(text)
+                    val tableMetadata = HashMap(baseMetadata)
+                    tableMetadata["table_origin"] = detectTableOrigin(text)
+                    tableMetadata["chunk_type"] = "table_prose"
+                    tableDocuments.add(Document(prose, tableMetadata))
+                    log.debug("Page $pageNum: Detected table, converted to prose (${prose.length} chars)")
+                } else {
+                    // Prose - will be split by TokenTextSplitter
+                    baseMetadata["chunk_type"] = "text"
+                    proseDocuments.add(Document(text, baseMetadata))
+                }
             }
         }
 
-        val documentsWithMetadata = documents.map { doc ->
-            val combinedMetadata = HashMap<String, Any>()
-            combinedMetadata.putAll(doc.metadata)
-            combinedMetadata.putAll(metadata)
-            combinedMetadata["file_path"] = filePath
-            Document(doc.id, doc.content, combinedMetadata)
-        }
-
+        // Apply TokenTextSplitter only to prose documents (tables remain atomic)
         val splitter = TokenTextSplitter(
             chunkSize,
             chunkOverlap,
@@ -249,22 +254,37 @@ open class RagService(
             1500,
             true
         )
-        val chunks = splitter.apply(documentsWithMetadata)
+        val proseChunks = splitter.apply(proseDocuments)
+        
+        // Combine table documents (atomic) with prose chunks
+        val allChunks = tableDocuments + proseChunks
 
-        vectorStore.add(chunks)
+        vectorStore.add(allChunks)
 
         val duration = System.currentTimeMillis() - startTime
 
-        log.info("Processed ${documents.size} pages into ${chunks.size} chunks in ${duration}ms for: $filename")
+        log.info("Processed $totalPages pages: ${tableDocuments.size} tables (atomic), ${proseChunks.size} prose chunks in ${duration}ms for: $filename")
 
         return IngestionResult(
             success = true,
             filename = filename,
-            chunksCreated = chunks.size,
-            pagesProcessed = documents.size,
+            chunksCreated = allChunks.size,
+            pagesProcessed = totalPages,
             durationMs = duration,
             metadata = metadata
         )
+    }
+
+    /**
+     * Detects the origin/type of a table based on content keywords.
+     */
+    private fun detectTableOrigin(text: String): String {
+        return when {
+            text.lowercase().contains("contribution") -> "contribution"
+            text.lowercase().contains("benefit") -> "benefit"
+            text.lowercase().contains("copayment") -> "copayment"
+            else -> "unknown"
+        }
     }
 
     fun search(query: String, topK: Int = 5): List<Document> {
@@ -310,6 +330,222 @@ open class RagService(
             "chunk_size" to chunkSize,
             "chunk_overlap" to chunkOverlap
         )
+    }
+
+    /**
+     * Detects if text content appears to be a table-like structure.
+     * Returns true if EITHER:
+     * 1. Pipe-separated table: At least 3 lines with consistent pipe count AND Rand amounts
+     * 2. Space-separated table: Contains "Contributions" or "copayment" keyword AND has multiple Rand amount lines
+     */
+    private fun detectTable(text: String): Boolean {
+        val lines = text.lines().filter { it.isNotBlank() }
+        if (lines.size < 3) return false
+
+        // Check for pipe separators with reasonable column count
+        val pipeLines = lines.filter { line ->
+            val pipeCount = line.count { it == '|' }
+            pipeCount >= 2 && pipeCount <= 20
+        }
+        
+        // Pipe-separated table detection
+        if (pipeLines.size >= 3) {
+            // Check column consistency - allow some variance (max 2 different column counts)
+            val columnCounts = pipeLines.map { line -> line.count { it == '|' } }
+            if (columnCounts.distinct().size <= 2) {
+                // Check for numeric amounts (South African Rand format: R 2 269, R1,764, etc.)
+                val amountPattern = "R\\s*\\d+(,\\d+)*".toRegex()
+                val linesWithAmounts = lines.count { line -> amountPattern.find(line) != null }
+                if (linesWithAmounts >= 2) {
+                    return true
+                }
+            }
+        }
+
+        // Space-separated table detection (for PDFs where table structure is not pipe-delimited)
+        // Look for contribution/benefit tables that have:
+        // - Keywords like "Contributions", "Principal", "Adult", "Child"
+        // - Multiple lines with Rand amounts
+        val hasContributionKeyword = text.contains("Contributions", ignoreCase = true) ||
+                                    text.contains("copayment", ignoreCase = true) ||
+                                    text.contains("monthly", ignoreCase = true) &&
+                                    (text.contains("R ", ignoreCase = true) || text.contains("R\\d", ignoreCase = true))
+        
+        if (hasContributionKeyword) {
+            val amountPattern = "R\\s*\\d+(,\\d+)*".toRegex()
+            val linesWithAmounts = lines.count { line -> 
+                amountPattern.find(line) != null && amountPattern.findAll(line).count() >= 2
+            }
+            // If we have at least 2 lines with 2+ Rand amounts each, it's likely a table
+            if (linesWithAmounts >= 2) {
+                return true
+            }
+        }
+
+        // Additional check: lines with multiple Rand amounts (even without contribution keyword)
+        val amountPattern = "R\\s*\\d+(,\\d+)*".toRegex()
+        val linesWithMultipleAmounts = lines.count { line ->
+            amountPattern.findAll(line).count() >= 2
+        }
+        if (linesWithMultipleAmounts >= 3) {
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Converts detected table content into readable prose.
+     * Handles South African Rand format and detects table type from content keywords.
+     */
+    private fun convertTableToProse(text: String): String {
+        val lines = text.lines().filter { it.isNotBlank() }
+
+        val tableType = when {
+            text.lowercase().contains("contribution") -> "contribution"
+            text.lowercase().contains("benefit") -> "benefit"
+            text.lowercase().contains("copayment") -> "copayment"
+            else -> "data"
+        }
+
+        return when (tableType) {
+            "contribution" -> convertContributionTable(lines)
+            "benefit" -> convertBenefitTable(lines)
+            "copayment" -> convertCopaymentTable(lines)
+            else -> convertGenericTable(lines)
+        }
+    }
+
+    /**
+     * Formats South African Rand amounts with proper comma separators.
+     * Handles formats like: "R2 269", "R 2 269", "R1,764", "R1 764"
+     */
+    private fun formatAmount(amount: String): String {
+        val cleaned = amount
+            .replace("R", " R ")
+            .replace(",", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val numberMatch = Regex("R?\\s*([\\d\\s]+)").find(cleaned)
+        if (numberMatch == null) return amount
+
+        val digits = numberMatch.groupValues[1].replace(" ", "")
+
+        val formatted = digits.reversed()
+            .chunked(3)
+            .joinToString(",")
+            .reversed()
+
+        return "R$formatted"
+    }
+
+    /**
+     * Converts contribution tables to prose format.
+     * Input: "Contributions Network Principal|R 2 269 Adult|R1 764 Child|R956"
+     * Output: "Contributions: Principal R2,269, Adult R1,764, Child R956 per month"
+     */
+    private fun convertContributionTable(lines: List<String>): String {
+        val contributions = mutableListOf<String>()
+        val amountPattern = Regex("R\\s*[\\d\\s,]+")
+
+        for (line in lines) {
+            val parts = line.split("|").map { it.trim() }
+            if (parts.size < 2) continue
+
+            val hasAmounts = amountPattern.containsMatchIn(line)
+            if (!hasAmounts) continue
+
+            val planName = parts[0]
+            val amounts = parts.drop(1).mapNotNull { part ->
+                val amountMatch = amountPattern.find(part)
+                if (amountMatch != null) {
+                    val label = part.replace(amountMatch.value, "").trim()
+                    val formattedAmount = formatAmount(amountMatch.value)
+                    if (label.isNotEmpty()) "$label $formattedAmount" else formattedAmount
+                } else null
+            }
+
+            if (amounts.isNotEmpty()) {
+                contributions.add("$planName: ${amounts.joinToString(", ")} per month")
+            }
+        }
+
+        return if (contributions.isNotEmpty()) {
+            "Contributions: ${contributions.joinToString("; ")}"
+        } else {
+            convertGenericTable(lines)
+        }
+    }
+
+    /**
+     * Converts benefit tables to prose format.
+     * Input: "Benefit Name|Limit|Per|Cover\nHospital|R1,000,000|Family|Yes"
+     * Output: "Benefits: Hospital limit R1,000,000 per family covered, ..."
+     */
+    private fun convertBenefitTable(lines: List<String>): String {
+        val benefits = mutableListOf<String>()
+        var header: List<String>? = null
+
+        for (line in lines) {
+            val parts = line.split("|").map { it.trim() }
+            if (parts.size < 2) continue
+
+            if (parts.any { it.lowercase() in listOf("benefit", "limit", "per", "cover", "name") }) {
+                header = parts
+                continue
+            }
+
+            val benefitName = parts[0]
+            val limit = parts.getOrNull(1)?.let { formatAmount(it) } ?: "unlimited"
+            val per = parts.getOrNull(2)?.lowercase() ?: "person"
+            val covered = parts.getOrNull(3)?.lowercase()?.contains("yes") == true
+
+            val coverage = if (covered) "covered" else "not covered"
+            benefits.add("$benefitName limit $limit per $per $coverage")
+        }
+
+        return if (benefits.isNotEmpty()) {
+            "Benefits: ${benefits.joinToString(", ")}"
+        } else {
+            convertGenericTable(lines)
+        }
+    }
+
+    /**
+     * Converts copayment tables to prose format.
+     */
+    private fun convertCopaymentTable(lines: List<String>): String {
+        val copayments = mutableListOf<String>()
+
+        for (line in lines) {
+            val parts = line.split("|").map { it.trim() }
+            if (parts.size < 2) continue
+
+            if (parts.any { it.lowercase() in listOf("copayment", "type", "service", "amount") }) {
+                continue
+            }
+
+            val serviceType = parts[0]
+            val amount = parts.getOrNull(1)?.let { formatAmount(it) } ?: "varies"
+
+            copayments.add("$serviceType: $amount")
+        }
+
+        return if (copayments.isNotEmpty()) {
+            "Copayments: ${copayments.joinToString(", ")}"
+        } else {
+            convertGenericTable(lines)
+        }
+    }
+
+    /**
+     * Generic table conversion for unknown table types.
+     */
+    private fun convertGenericTable(lines: List<String>): String {
+        return lines.map { line ->
+            line.split("|").map { it.trim() }.joinToString(" - ")
+        }.joinToString("; ")
     }
 }
 

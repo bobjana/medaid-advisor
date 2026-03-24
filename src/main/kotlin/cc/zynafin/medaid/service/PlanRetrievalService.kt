@@ -43,25 +43,33 @@ open class PlanRetrievalService(
 
     fun retrieveForMetadata(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
         val query = buildMetadataQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "metadata")
+        return retrieveRelevantChunks(query, scheme, planName, year, "metadata", preferTableProse = false)
     }
 
     fun retrieveForContributions(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
         val query = buildContributionsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "contributions")
+        return retrieveRelevantChunks(query, scheme, planName, year, "contributions", preferTableProse = true, tableOrigin = "contribution")
     }
 
     fun retrieveForBenefits(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
         val query = buildBenefitsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "benefits")
+        return retrieveRelevantChunks(query, scheme, planName, year, "benefits", preferTableProse = true, tableOrigin = "benefit")
     }
 
     fun retrieveForCopayments(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
         val query = buildCopaymentsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "copayments")
+        return retrieveRelevantChunks(query, scheme, planName, year, "copayments", preferTableProse = true, tableOrigin = "copayment")
     }
 
-    private fun retrieveRelevantChunks(query: String, scheme: String, planName: String, year: Int, section: String): SectionExtractionResult<String> {
+    private fun retrieveRelevantChunks(
+        query: String,
+        scheme: String,
+        planName: String,
+        year: Int,
+        section: String,
+        preferTableProse: Boolean = false,
+        tableOrigin: String? = null
+    ): SectionExtractionResult<String> {
         return try {
             val embedding = generateEmbedding(query)
             
@@ -79,8 +87,21 @@ open class PlanRetrievalService(
             // Convert embedding to PostgreSQL vector string format
             val embeddingVector = embedding.joinToString(",", prefix = "[", postfix = "]")
             
-            // Use PostgreSQL vector type for similarity search
-            // Using ?::vector syntax for proper string to vector conversion
+            log.debug("Executing retrieval SQL for scheme=$scheme, planName=$planName, year=$year, section=$section, preferTableProse=$preferTableProse, tableOrigin=$tableOrigin")
+            
+            // If we prefer table_prose chunks, try that first
+            if (preferTableProse) {
+                val tableProseResults = tryRetrieveWithTableFilter(embeddingVector, scheme, planName, year, tableOrigin)
+                
+                if (tableProseResults.isNotEmpty()) {
+                    log.info("Found ${tableProseResults.size} table_prose chunks for section=$section")
+                    return buildResult(tableProseResults, section)
+                }
+                
+                log.debug("No table_prose chunks found for section=$section, falling back to all chunks")
+            }
+            
+            // Fallback: retrieve all chunks without chunk_type filter
             val sql = """
                 SELECT id, content, metadata, embedding <=> (?::vector) as distance
                 FROM vector_store
@@ -91,10 +112,8 @@ open class PlanRetrievalService(
                 LIMIT ?
             """.trimIndent()
             
-            log.debug("Executing retrieval SQL for scheme=$scheme, planName=$planName, year=$year")
-            log.debug("Executing SQL with params: embedding=${embeddingVector.take(50)}..., scheme=$scheme, planName=$planName, year=$year, topK=$topK")
+            log.debug("Executing fallback SQL with params: scheme=$scheme, planName=$planName, year=$year, topK=$topK")
             
-            // Parameters: embedding (SELECT), scheme, planName, year, embedding (ORDER BY), topK
             val results = try {
                 jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
             } catch (e: Exception) {
@@ -113,27 +132,7 @@ open class PlanRetrievalService(
                 )
             }
             
-            val sourceChunks = results.map { doc ->
-                SourceCitation(
-                    chunkId = doc.id,
-                    content = doc.content,
-                    pageNumber = doc.metadata["page_number"] as? Int ?: 0,
-                    similarityScore = doc.distance
-                )
-            }
-
-            val combinedContent = results.joinToString("\n\n") { it.content }
-            val avgDistance = results.map { it.distance }.average()
-
-            log.info("Retrieved ${results.size} chunks for section=$section with avg distance: $avgDistance")
-
-            SectionExtractionResult(
-                data = combinedContent,
-                confidence = 1.0 - avgDistance,
-                sourceChunks = sourceChunks,
-                retryAttempts = 0,
-                errorMessage = null
-            )
+            buildResult(results, section)
         } catch (e: Exception) {
             log.error("Failed to retrieve chunks for section=$section", e)
             SectionExtractionResult(
@@ -144,6 +143,79 @@ open class PlanRetrievalService(
                 errorMessage = "Error retrieving chunks: ${e.message}"
             )
         }
+    }
+    
+    /**
+     * Try to retrieve chunks with table_prose filter.
+     * Optionally filter by table_origin (contribution, benefit, copayment).
+     */
+    private fun tryRetrieveWithTableFilter(
+        embeddingVector: String,
+        scheme: String,
+        planName: String,
+        year: Int,
+        tableOrigin: String?
+    ): List<DocResult> {
+        // Build SQL with chunk_type filter
+        val baseSql = """
+            SELECT id, content, metadata, embedding <=> (?::vector) as distance
+            FROM vector_store
+            WHERE metadata->>'scheme' = ?
+              AND metadata->>'plan_name' = ?
+              AND (metadata->>'year')::int = ?
+              AND metadata->>'chunk_type' = 'table_prose'
+        """.trimIndent()
+        
+        // Add table_origin filter if specified
+        val sql = if (tableOrigin != null) {
+            """
+                $baseSql
+                AND metadata->>'table_origin' = ?
+                ORDER BY embedding <=> (?::vector)
+                LIMIT ?
+            """.trimIndent()
+        } else {
+            """
+                $baseSql
+                ORDER BY embedding <=> (?::vector)
+                LIMIT ?
+            """.trimIndent()
+        }
+        
+        return try {
+            if (tableOrigin != null) {
+                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, tableOrigin, embeddingVector, topK)
+            } else {
+                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
+            }
+        } catch (e: Exception) {
+            log.debug("No table_prose chunks found with table_origin=$tableOrigin: ${e.message}")
+            emptyList()
+        }
+    }
+    
+    private fun buildResult(results: List<DocResult>, section: String): SectionExtractionResult<String> {
+        val sourceChunks = results.map { doc ->
+            SourceCitation(
+                chunkId = doc.id,
+                content = doc.content,
+                pageNumber = doc.metadata["page_number"] as? Int ?: 0,
+                similarityScore = doc.distance
+            )
+        }
+
+        val combinedContent = results.joinToString("\n\n") { it.content }
+        val avgDistance = results.map { it.distance }.average()
+
+        log.info("Retrieved ${results.size} chunks for section=$section with avg distance: $avgDistance")
+
+        return SectionExtractionResult(
+            data = combinedContent,
+            confidence = 1.0 - avgDistance,
+            sourceChunks = sourceChunks,
+            retryAttempts = 0,
+            errorMessage = null
+        )
     }
 
     private fun generateEmbedding(text: String): List<Double>? {

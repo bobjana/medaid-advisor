@@ -1,6 +1,7 @@
 package cc.zynafin.medaid.service
 
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -11,11 +12,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 @Component
 class GoogleGeminiClient(
     private val restClient: RestClient,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Value("\${medaid.extraction.remote.model:gemini-2.0-flash}")
+    private val modelName: String
 ) {
     private val log = LoggerFactory.getLogger(GoogleGeminiClient::class.java)
     
-    fun generateContent(prompt: String, model: String = "gemini-2.5-flash"): String {
+    fun generateContent(prompt: String, model: String = modelName): String {
         try {
             val apiKey = System.getenv("GEMINI_API_KEY") ?: 
                 java.io.File(".secret_gemini_api_key").readText().trim()

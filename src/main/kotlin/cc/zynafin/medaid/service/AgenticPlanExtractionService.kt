@@ -288,6 +288,45 @@ open class AgenticPlanExtractionService(
         )
         planRepository.save(updatedPlan)
 
+        val completenessValidation = validationService.validatePlanCompleteness(planId)
+        if (!completenessValidation.isValid) {
+            log.warn(
+                "Plan completeness validation failed for {}/{} ({}): {}",
+                plan.scheme,
+                plan.planName,
+                plan.planYear,
+                completenessValidation.errors.joinToString("; ")
+            )
+            
+            val planWithReviewStatus = Plan(
+                id = updatedPlan.id,
+                scheme = updatedPlan.scheme,
+                planName = updatedPlan.planName,
+                planYear = updatedPlan.planYear,
+                planType = updatedPlan.planType,
+                extractionStatus = ExtractionStatus.PENDING_REVIEW,
+                principalContribution = updatedPlan.principalContribution,
+                adultDependentContribution = updatedPlan.adultDependentContribution,
+                childDependentContribution = updatedPlan.childDependentContribution,
+                benefits = updatedPlan.benefits,
+                copayments = updatedPlan.copayments,
+                hospitalBenefits = updatedPlan.hospitalBenefits,
+                chronicBenefits = updatedPlan.chronicBenefits,
+                dayToDayBenefits = updatedPlan.dayToDayBenefits,
+                hasMedicalSavingsAccount = updatedPlan.hasMedicalSavingsAccount,
+                msaPercentage = updatedPlan.msaPercentage,
+                createdAt = updatedPlan.createdAt,
+                sourceDocument = updatedPlan.sourceDocument
+            )
+            planRepository.save(planWithReviewStatus)
+            
+            log.info(
+                "Updated extraction status to PENDING_REVIEW for plan {} due to missing data: {}",
+                planId,
+                completenessValidation.errors.joinToString(", ")
+            )
+        }
+
         log.info("Stored extraction result for plan {}", planId)
 
         return extractionResult

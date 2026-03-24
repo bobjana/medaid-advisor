@@ -20,7 +20,8 @@ import java.util.regex.Pattern
 open class PlanDataService(
     private val planRepository: PlanRepository,
     private val contributionRepository: ContributionRepository,
-    private val hospitalBenefitRepository: HospitalBenefitRepository
+    private val hospitalBenefitRepository: HospitalBenefitRepository,
+    private val agenticPlanExtractionService: AgenticPlanExtractionService
 ) {
     private val log = LoggerFactory.getLogger(PlanDataService::class.java)
 
@@ -64,8 +65,43 @@ open class PlanDataService(
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
             }
 
-            throw UnsupportedOperationException(
-                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            val extractionResult = agenticPlanExtractionService.extractPlan(plan.scheme, plan.planName, plan.planYear)
+
+            val contributions = mutableListOf<Contribution>()
+            val contributionsJson = extractionResult.contributions
+
+            if (contributionsJson != null && contributionsJson.has("items")) {
+                val items = contributionsJson.get("items")
+                if (items != null && items.isArray) {
+                    for (item in items) {
+                        val memberTypeStr = item.get("memberType").asText().uppercase()
+                        val memberType = try {
+                            MemberType.valueOf(memberTypeStr.replace(" ", "_").replace("-", "_"))
+                        } catch (e: Exception) {
+                            log.warn("Unknown member type: $memberTypeStr, skipping")
+                            continue
+                        }
+                        val monthlyAmount = item.get("monthlyAmount").asDouble()
+                        contributions.add(Contribution(
+                            plan = plan,
+                            memberType = memberType,
+                            monthlyAmount = monthlyAmount,
+                            conditions = "Agentic extraction"
+                        ))
+                    }
+                }
+            }
+
+            contributionRepository.findByPlanId(planId).forEach { contributionRepository.delete(it) }
+            val saved = contributions.map { contributionRepository.save(it) }
+
+            log.info("Extracted and stored ${saved.size} contributions for plan $planId")
+
+            return ContributionParseResult(
+                success = true,
+                planId = planId,
+                contributionsExtracted = saved.size,
+                contributions = saved
             )
         } catch (e: Exception) {
             log.error("Failed to extract contributions agenticly for plan $planId", e)
@@ -89,8 +125,55 @@ open class PlanDataService(
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
             }
 
-            throw UnsupportedOperationException(
-                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            val extractionResult = agenticPlanExtractionService.extractPlan(plan.scheme, plan.planName, plan.planYear)
+
+            val benefits = mutableListOf<HospitalBenefit>()
+            val benefitsJson = extractionResult.benefits
+
+            if (benefitsJson != null && benefitsJson.has("items")) {
+                val items = benefitsJson.get("items")
+                if (items != null && items.isArray) {
+                    for (item in items) {
+                        val categoryStr = item.get("category").asText().uppercase()
+                        val category = try {
+                            BenefitCategory.valueOf(categoryStr.replace(" ", "_").replace("-", "_"))
+                        } catch (e: Exception) {
+                            log.warn("Unknown benefit category: $categoryStr, skipping")
+                            continue
+                        }
+                        val benefitName = if (item.has("benefitName")) item.get("benefitName").asText() else category.name
+                        val limitPerFamily = if (item.has("limitPerFamily")) item.get("limitPerFamily").asText() else null
+                        val limitPerPerson = if (item.has("limitPerPerson")) item.get("limitPerPerson").asText() else null
+                        val annualLimit = if (item.has("annualLimit")) item.get("annualLimit").asText() else null
+                        val covered = if (item.has("covered")) item.get("covered").asBoolean() else true
+                        val notes = if (item.has("notes")) item.get("notes").asText() else null
+                        val conditions = if (item.has("conditions")) item.get("conditions").asText() else null
+
+                        benefits.add(HospitalBenefit(
+                            plan = plan,
+                            category = category,
+                            benefitName = benefitName,
+                            limitPerFamily = limitPerFamily,
+                            limitPerPerson = limitPerPerson,
+                            annualLimit = annualLimit,
+                            covered = covered,
+                            notes = notes,
+                            conditions = conditions
+                        ))
+                    }
+                }
+            }
+
+            hospitalBenefitRepository.findByPlanId(planId).forEach { hospitalBenefitRepository.delete(it) }
+            val saved = benefits.map { hospitalBenefitRepository.save(it) }
+
+            log.info("Extracted and stored ${saved.size} hospital benefits for plan $planId")
+
+            return HospitalBenefitParseResult(
+                success = true,
+                planId = planId,
+                benefitsExtracted = saved.size,
+                benefits = saved
             )
         } catch (e: Exception) {
             log.error("Failed to extract hospital benefits agenticly for plan $planId", e)
@@ -114,8 +197,29 @@ open class PlanDataService(
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
             }
 
-            throw UnsupportedOperationException(
-                "Agentic extraction not yet integrated. Use AgenticPlanExtractionService.extractPlan()"
+            val extractionResult = agenticPlanExtractionService.extractPlan(plan.scheme, plan.planName, plan.planYear)
+
+            val copayments = mutableMapOf<String, Double>()
+            val copaymentsJson = extractionResult.copayments
+
+            if (copaymentsJson != null && copaymentsJson.has("items")) {
+                val items = copaymentsJson.get("items")
+                if (items != null && items.isArray) {
+                    for (item in items) {
+                        val copaymentType = item.get("type").asText()
+                        val amount = item.get("amount").asDouble()
+                        copayments[copaymentType] = amount
+                    }
+                }
+            }
+
+            log.info("Extracted ${copayments.size} copayments for plan $planId")
+
+            return CopaymentParseResult(
+                success = true,
+                planId = planId,
+                copaymentsExtracted = copayments.size,
+                copayments = copayments
             )
         } catch (e: Exception) {
             log.error("Failed to extract copayments agenticly for plan $planId", e)

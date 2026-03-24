@@ -1,6 +1,7 @@
 package cc.zynafin.medaid.service
 
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.ai.chat.model.ChatModel
 import org.springframework.ai.chat.model.ChatResponse
 import org.springframework.ai.chat.model.Generation
@@ -14,7 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
  */
 class GoogleGeminiChatModel(
     private val googleGeminiClient: GoogleGeminiClient,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    @Value("\${medaid.extraction.remote.model:gemini-2.0-flash}")
+    private val modelName: String
 ) : ChatModel {
     
     private val log = LoggerFactory.getLogger(GoogleGeminiChatModel::class.java)
@@ -42,7 +45,7 @@ class GoogleGeminiChatModel(
     
     override fun getDefaultOptions(): OpenAiChatOptions {
         return OpenAiChatOptions.builder()
-            .withModel("gemini-2.5-flash")
+            .withModel(modelName)
             .withTemperature(0.1)
             .build()
     }
