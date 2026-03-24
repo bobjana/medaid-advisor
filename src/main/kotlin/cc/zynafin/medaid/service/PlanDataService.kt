@@ -21,7 +21,8 @@ open class PlanDataService(
     private val planRepository: PlanRepository,
     private val contributionRepository: ContributionRepository,
     private val hospitalBenefitRepository: HospitalBenefitRepository,
-    private val agenticPlanExtractionService: AgenticPlanExtractionService
+    private val pdfTableExtractor: PdfTableExtractor,
+    private val agenticPlanExtractionService: AgenticPlanExtractionService,
 ) {
     private val log = LoggerFactory.getLogger(PlanDataService::class.java)
 
@@ -31,10 +32,14 @@ open class PlanDataService(
     }
 
     @Transactional
-    open fun parseAndStoreContributions(pdfPath: String, planId: UUID): ContributionParseResult {
-        val plan = planRepository.findById(planId).orElseThrow {
-            IllegalArgumentException("Plan not found: $planId")
-        }
+    open fun parseAndStoreContributions(
+        pdfPath: String,
+        planId: UUID,
+    ): ContributionParseResult {
+        val plan =
+            planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
 
         val contributions = extractContributionsFromPdf(pdfPath, plan)
 
@@ -42,24 +47,29 @@ open class PlanDataService(
             contributionRepository.delete(it)
         }
 
-        val saved = contributions.map {
-            contributionRepository.save(it)
-        }
+        val saved =
+            contributions.map {
+                contributionRepository.save(it)
+            }
 
         return ContributionParseResult(
             success = true,
             planId = planId,
             contributionsExtracted = saved.size,
-            contributions = saved
+            contributions = saved,
         )
     }
 
     @Transactional
-    open fun extractAndStoreContributionsAgentic(planId: UUID, useRagData: Boolean = true): ContributionParseResult {
+    open fun extractAndStoreContributionsAgentic(
+        planId: UUID,
+        useRagData: Boolean = true,
+    ): ContributionParseResult {
         try {
-            val plan = planRepository.findById(planId).orElseThrow {
-                IllegalArgumentException("Plan not found: $planId")
-            }
+            val plan =
+                planRepository.findById(planId).orElseThrow {
+                    IllegalArgumentException("Plan not found: $planId")
+                }
 
             if (!useRagData) {
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
@@ -75,19 +85,22 @@ open class PlanDataService(
                 if (items != null && items.isArray) {
                     for (item in items) {
                         val memberTypeStr = item.get("memberType").asText().uppercase()
-                        val memberType = try {
-                            MemberType.valueOf(memberTypeStr.replace(" ", "_").replace("-", "_"))
-                        } catch (e: Exception) {
-                            log.warn("Unknown member type: $memberTypeStr, skipping")
-                            continue
-                        }
+                        val memberType =
+                            try {
+                                MemberType.valueOf(memberTypeStr.replace(" ", "_").replace("-", "_"))
+                            } catch (e: Exception) {
+                                log.warn("Unknown member type: $memberTypeStr, skipping")
+                                continue
+                            }
                         val monthlyAmount = item.get("monthlyAmount").asDouble()
-                        contributions.add(Contribution(
-                            plan = plan,
-                            memberType = memberType,
-                            monthlyAmount = monthlyAmount,
-                            conditions = "Agentic extraction"
-                        ))
+                        contributions.add(
+                            Contribution(
+                                plan = plan,
+                                memberType = memberType,
+                                monthlyAmount = monthlyAmount,
+                                conditions = "Agentic extraction",
+                            ),
+                        )
                     }
                 }
             }
@@ -101,7 +114,7 @@ open class PlanDataService(
                 success = true,
                 planId = planId,
                 contributionsExtracted = saved.size,
-                contributions = saved
+                contributions = saved,
             )
         } catch (e: Exception) {
             log.error("Failed to extract contributions agenticly for plan $planId", e)
@@ -109,17 +122,21 @@ open class PlanDataService(
                 success = false,
                 planId = planId,
                 contributionsExtracted = 0,
-                contributions = emptyList()
+                contributions = emptyList(),
             )
         }
     }
 
     @Transactional
-    open fun extractAndStoreHospitalBenefitsAgentic(planId: UUID, useRagData: Boolean = true): HospitalBenefitParseResult {
+    open fun extractAndStoreHospitalBenefitsAgentic(
+        planId: UUID,
+        useRagData: Boolean = true,
+    ): HospitalBenefitParseResult {
         try {
-            val plan = planRepository.findById(planId).orElseThrow {
-                IllegalArgumentException("Plan not found: $planId")
-            }
+            val plan =
+                planRepository.findById(planId).orElseThrow {
+                    IllegalArgumentException("Plan not found: $planId")
+                }
 
             if (!useRagData) {
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
@@ -135,12 +152,13 @@ open class PlanDataService(
                 if (items != null && items.isArray) {
                     for (item in items) {
                         val categoryStr = item.get("category").asText().uppercase()
-                        val category = try {
-                            BenefitCategory.valueOf(categoryStr.replace(" ", "_").replace("-", "_"))
-                        } catch (e: Exception) {
-                            log.warn("Unknown benefit category: $categoryStr, skipping")
-                            continue
-                        }
+                        val category =
+                            try {
+                                BenefitCategory.valueOf(categoryStr.replace(" ", "_").replace("-", "_"))
+                            } catch (e: Exception) {
+                                log.warn("Unknown benefit category: $categoryStr, skipping")
+                                continue
+                            }
                         val benefitName = if (item.has("benefitName")) item.get("benefitName").asText() else category.name
                         val limitPerFamily = if (item.has("limitPerFamily")) item.get("limitPerFamily").asText() else null
                         val limitPerPerson = if (item.has("limitPerPerson")) item.get("limitPerPerson").asText() else null
@@ -149,17 +167,19 @@ open class PlanDataService(
                         val notes = if (item.has("notes")) item.get("notes").asText() else null
                         val conditions = if (item.has("conditions")) item.get("conditions").asText() else null
 
-                        benefits.add(HospitalBenefit(
-                            plan = plan,
-                            category = category,
-                            benefitName = benefitName,
-                            limitPerFamily = limitPerFamily,
-                            limitPerPerson = limitPerPerson,
-                            annualLimit = annualLimit,
-                            covered = covered,
-                            notes = notes,
-                            conditions = conditions
-                        ))
+                        benefits.add(
+                            HospitalBenefit(
+                                plan = plan,
+                                category = category,
+                                benefitName = benefitName,
+                                limitPerFamily = limitPerFamily,
+                                limitPerPerson = limitPerPerson,
+                                annualLimit = annualLimit,
+                                covered = covered,
+                                notes = notes,
+                                conditions = conditions,
+                            ),
+                        )
                     }
                 }
             }
@@ -173,7 +193,7 @@ open class PlanDataService(
                 success = true,
                 planId = planId,
                 benefitsExtracted = saved.size,
-                benefits = saved
+                benefits = saved,
             )
         } catch (e: Exception) {
             log.error("Failed to extract hospital benefits agenticly for plan $planId", e)
@@ -181,17 +201,21 @@ open class PlanDataService(
                 success = false,
                 planId = planId,
                 benefitsExtracted = 0,
-                benefits = emptyList()
+                benefits = emptyList(),
             )
         }
     }
 
     @Transactional
-    open fun extractAndStoreCopaymentsAgentic(planId: UUID, useRagData: Boolean = true): CopaymentParseResult {
+    open fun extractAndStoreCopaymentsAgentic(
+        planId: UUID,
+        useRagData: Boolean = true,
+    ): CopaymentParseResult {
         try {
-            val plan = planRepository.findById(planId).orElseThrow {
-                IllegalArgumentException("Plan not found: $planId")
-            }
+            val plan =
+                planRepository.findById(planId).orElseThrow {
+                    IllegalArgumentException("Plan not found: $planId")
+                }
 
             if (!useRagData) {
                 throw IllegalArgumentException("Agentic extraction requires RAG data. Pass useRagData=true")
@@ -219,7 +243,7 @@ open class PlanDataService(
                 success = true,
                 planId = planId,
                 copaymentsExtracted = copayments.size,
-                copayments = copayments
+                copayments = copayments,
             )
         } catch (e: Exception) {
             log.error("Failed to extract copayments agenticly for plan $planId", e)
@@ -227,17 +251,20 @@ open class PlanDataService(
                 success = false,
                 planId = planId,
                 copaymentsExtracted = 0,
-                copayments = emptyMap()
+                copayments = emptyMap(),
             )
         }
     }
 
-
     @Transactional
-    open fun parseAndStoreHospitalBenefits(pdfPath: String, planId: UUID): HospitalBenefitParseResult {
-        val plan = planRepository.findById(planId).orElseThrow {
-            IllegalArgumentException("Plan not found: $planId")
-        }
+    open fun parseAndStoreHospitalBenefits(
+        pdfPath: String,
+        planId: UUID,
+    ): HospitalBenefitParseResult {
+        val plan =
+            planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
 
         val benefits = extractHospitalBenefitsFromPdf(pdfPath, plan)
 
@@ -245,23 +272,28 @@ open class PlanDataService(
             hospitalBenefitRepository.delete(it)
         }
 
-        val saved = benefits.map {
-            hospitalBenefitRepository.save(it)
-        }
+        val saved =
+            benefits.map {
+                hospitalBenefitRepository.save(it)
+            }
 
         return HospitalBenefitParseResult(
             success = true,
             planId = planId,
             benefitsExtracted = saved.size,
-            benefits = saved
+            benefits = saved,
         )
     }
 
     @Transactional
-    open fun parseAndStoreCopayments(pdfPath: String, planId: UUID): CopaymentParseResult {
-        val plan = planRepository.findById(planId).orElseThrow {
-            IllegalArgumentException("Plan not found: $planId")
-        }
+    open fun parseAndStoreCopayments(
+        pdfPath: String,
+        planId: UUID,
+    ): CopaymentParseResult {
+        val plan =
+            planRepository.findById(planId).orElseThrow {
+                IllegalArgumentException("Plan not found: $planId")
+            }
 
         val copayments = extractCopaymentsFromPdf(pdfPath, plan)
 
@@ -269,43 +301,333 @@ open class PlanDataService(
             success = true,
             planId = planId,
             copaymentsExtracted = copayments.size,
-            copayments = copayments
+            copayments = copayments,
         )
     }
 
     open fun extractMsaInfo(pdfPath: String): MsaInfo {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
-        val text = pdfDoc.use { doc ->
-            val stripper = PDFTextStripper()
-            stripper.getText(doc)
-        }
+        val text =
+            pdfDoc.use { doc ->
+                val stripper = PDFTextStripper()
+                stripper.getText(doc)
+            }
 
         val lowerText = text.lowercase()
 
-        val hasMsa = lowerText.contains("medical savings account") ||
+        val hasMsa =
+            lowerText.contains("medical savings account") ||
                 lowerText.contains("msa") ||
                 lowerText.contains("savings account") ||
                 lowerText.contains("personal savings") ||
                 lowerText.contains("day-to-day benefit")
 
-        val msaPercentage = if (hasMsa) {
-            extractMsaPercentage(lowerText)
-        } else null
+        val msaPercentage =
+            if (hasMsa) {
+                extractMsaPercentage(lowerText)
+            } else {
+                null
+            }
 
         return MsaInfo(
             hasMedicalSavingsAccount = hasMsa,
-            msaPercentage = msaPercentage
+            msaPercentage = msaPercentage,
         )
     }
 
-    private fun extractContributionsFromPdf(pdfPath: String, plan: Plan): List<Contribution> {
+    // ==================== STRUCTURED TABLE EXTRACTION (PRIMARY) ====================
+
+    private fun extractContributionsFromPdf(
+        pdfPath: String,
+        plan: Plan,
+    ): List<Contribution> {
+        try {
+            val pages = pdfTableExtractor.extractTablesAndText(pdfPath)
+            val contributionTables = pages.flatMap { it.tables }.filter { it.tableType == TableType.CONTRIBUTION }
+
+            if (contributionTables.isNotEmpty()) {
+                log.info("Using structured table extraction for contributions")
+                val contributions = mutableListOf<Contribution>()
+                for (table in contributionTables) {
+                    contributions.addAll(extractContributionsFromTable(table, plan))
+                }
+                if (contributions.isNotEmpty()) {
+                    log.info("Extracted ${contributions.size} contributions from tables: $pdfPath")
+                    return contributions
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Table extraction failed for contributions, falling back to regex: ${e.message}")
+        }
+
+        log.info("Falling back to regex extraction for contributions")
+        return extractContributionsFromPdfFallback(pdfPath, plan)
+    }
+
+    private fun extractContributionsFromTable(
+        table: ExtractedTable,
+        plan: Plan,
+    ): List<Contribution> {
+        val contributions = mutableListOf<Contribution>()
+        val headers = table.headers.map { it.lowercase() }
+
+        // Strategy 1: Columnar format — headers name the member types, rows carry amounts.
+        // e.g. headers: ["", "Principal", "Adult Dep", "Child 1", "Child 2"]
+        val memberTypeColumnMap = mutableMapOf<Int, MemberType>()
+        for ((idx, header) in headers.withIndex()) {
+            when {
+                header.contains("principal") || header.contains("main member") -> {
+                    memberTypeColumnMap[idx] = MemberType.PRINCIPAL
+                }
+
+                header.contains("spouse") || header.contains("partner") -> {
+                    memberTypeColumnMap[idx] = MemberType.SPOUSE
+                }
+
+                header.contains("adult") -> {
+                    // "adult dependent" / "adult dep" → maps to SPOUSE (no separate ADULT_DEPENDANT enum value)
+                    memberTypeColumnMap[idx] = MemberType.SPOUSE
+                }
+
+                header.contains("child") || header.contains("children") -> {
+                    val childCount = memberTypeColumnMap.values.count { it.name.startsWith("CHILD") }
+                    memberTypeColumnMap[idx] =
+                        when (childCount) {
+                            0 -> MemberType.CHILD_FIRST
+                            1 -> MemberType.CHILD_SECOND
+                            2 -> MemberType.CHILD_THIRD
+                            3 -> MemberType.CHILD_FOURTH
+                            else -> MemberType.CHILD_FIFTH_OR_MORE
+                        }
+                }
+            }
+        }
+
+        if (memberTypeColumnMap.isNotEmpty()) {
+            for (row in table.rows) {
+                for ((colIdx, memberType) in memberTypeColumnMap) {
+                    if (colIdx < row.size && contributions.none { it.memberType == memberType }) {
+                        val amount = parseCellRandAmount(row[colIdx])
+                        if (amount != null) {
+                            contributions.add(
+                                Contribution(
+                                    plan = plan,
+                                    memberType = memberType,
+                                    monthlyAmount = amount,
+                                    conditions = "Extracted from PDF table",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            return contributions
+        }
+
+        // Strategy 2: Row-label format — first cell is member type name, remainder are amounts.
+        // e.g. rows: [["Principal Member", "R2 269"], ["Spouse", "R1 764"], ...]
+        for (row in table.rows) {
+            if (row.isEmpty()) continue
+            val label = row.first().lowercase()
+            val memberType: MemberType? =
+                when {
+                    label.contains("principal") || label.contains("main member") -> {
+                        MemberType.PRINCIPAL
+                    }
+
+                    label.contains("spouse") || label.contains("partner") -> {
+                        MemberType.SPOUSE
+                    }
+
+                    label.contains("adult") -> {
+                        MemberType.SPOUSE
+                    }
+
+                    label.contains("child") -> {
+                        val childCount = contributions.count { it.memberType.name.startsWith("CHILD") }
+                        when (childCount) {
+                            0 -> MemberType.CHILD_FIRST
+                            1 -> MemberType.CHILD_SECOND
+                            2 -> MemberType.CHILD_THIRD
+                            3 -> MemberType.CHILD_FOURTH
+                            else -> MemberType.CHILD_FIFTH_OR_MORE
+                        }
+                    }
+
+                    else -> {
+                        null
+                    }
+                }
+
+            if (memberType != null && contributions.none { it.memberType == memberType }) {
+                for (cell in row.drop(1)) {
+                    val amount = parseCellRandAmount(cell)
+                    if (amount != null) {
+                        contributions.add(
+                            Contribution(
+                                plan = plan,
+                                memberType = memberType,
+                                monthlyAmount = amount,
+                                conditions = "Extracted from PDF table",
+                            ),
+                        )
+                        break
+                    }
+                }
+            }
+        }
+
+        return contributions
+    }
+
+    private fun extractHospitalBenefitsFromPdf(
+        pdfPath: String,
+        plan: Plan,
+    ): List<HospitalBenefit> {
+        try {
+            val pages = pdfTableExtractor.extractTablesAndText(pdfPath)
+            val benefitTables = pages.flatMap { it.tables }.filter { it.tableType == TableType.BENEFIT }
+
+            if (benefitTables.isNotEmpty()) {
+                log.info("Using structured table extraction for hospital benefits")
+                val benefits = mutableListOf<HospitalBenefit>()
+                for (table in benefitTables) {
+                    benefits.addAll(extractBenefitsFromTable(table, plan))
+                }
+                if (benefits.isNotEmpty()) {
+                    log.info("Extracted ${benefits.size} hospital benefits from tables: $pdfPath")
+                    return benefits
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Table extraction failed for hospital benefits, falling back to regex: ${e.message}")
+        }
+
+        log.info("Falling back to regex extraction for hospital benefits")
+        return extractHospitalBenefitsFromPdfFallback(pdfPath, plan)
+    }
+
+    private fun extractBenefitsFromTable(
+        table: ExtractedTable,
+        plan: Plan,
+    ): List<HospitalBenefit> {
+        val benefits = mutableListOf<HospitalBenefit>()
+        val categoryPatterns =
+            mapOf(
+                BenefitCategory.HOSPITAL_COVER to listOf("hospital", "in-hospital", "hospitalization"),
+                BenefitCategory.CHRONIC_MEDICINE to listOf("chronic", "cdl"),
+                BenefitCategory.SPECIALIST_CONSULTATION to listOf("specialist", "consultation"),
+                BenefitCategory.EMERGENCY_SERVICE to listOf("emergency", "accident", "casualty"),
+                BenefitCategory.MATERNITY to listOf("maternity", "pregnancy", "birth"),
+                BenefitCategory.DENTAL to listOf("dental", "teeth"),
+                BenefitCategory.OPTICAL to listOf("optical", "glasses", "lens", "eye"),
+                BenefitCategory.PRESCRIBED_MINIMUM_BENEFITS to listOf("pmb", "prescribed minimum"),
+            )
+
+        for (row in table.rows) {
+            if (row.isEmpty()) continue
+            val rowText = row.joinToString(" ").lowercase()
+
+            for ((category, keywords) in categoryPatterns) {
+                if (keywords.any { rowText.contains(it) } && benefits.none { it.category == category }) {
+                    val limit = extractLimitFromCells(row)
+                    benefits.add(
+                        HospitalBenefit(
+                            plan = plan,
+                            category = category,
+                            benefitName = row.first().ifBlank { category.name },
+                            limitPerFamily = limit?.familyLimit,
+                            limitPerPerson = limit?.personLimit,
+                            annualLimit = limit?.annualLimit,
+                            covered = true,
+                            notes = "Extracted from PDF table",
+                            conditions = null,
+                        ),
+                    )
+                    break
+                }
+            }
+        }
+
+        return benefits
+    }
+
+    private fun extractCopaymentsFromPdf(
+        pdfPath: String,
+        plan: Plan,
+    ): Map<String, Double> {
+        val copayments = mutableMapOf<String, Double>()
+
+        try {
+            val pages = pdfTableExtractor.extractTablesAndText(pdfPath)
+            val copaymentTables = pages.flatMap { it.tables }.filter { it.tableType == TableType.COPAYMENT }
+
+            if (copaymentTables.isNotEmpty()) {
+                log.info("Using structured table extraction for copayments")
+                for (table in copaymentTables) {
+                    copayments.putAll(extractCopaymentsFromTable(table))
+                }
+            }
+        } catch (e: Exception) {
+            log.warn("Table extraction failed for copayments, falling back to regex: ${e.message}")
+        }
+
+        val noTableCopaymentsFound = copayments.isEmpty()
+        if (noTableCopaymentsFound) {
+            log.info("Falling back to regex extraction for copayments")
+            copayments.putAll(extractCopaymentsFromPdfFallback(pdfPath, plan))
+        }
+
+        return copayments
+    }
+
+    private fun extractCopaymentsFromTable(table: ExtractedTable): Map<String, Double> {
+        val copayments = mutableMapOf<String, Double>()
+        val copaymentTypePatterns =
+            mapOf(
+                "gp_consultation" to listOf("gp consultation", "general practitioner", "doctor visit"),
+                "specialist_consultation" to listOf("specialist consultation", "specialist visit"),
+                "acute_medicine" to listOf("acute medicine", "prescribed medicine"),
+                "radiology" to listOf("radiology", "x-ray", "scan"),
+                "pathology" to listOf("pathology", "blood test", "lab test"),
+                "dental" to listOf("dental consultation", "dentist"),
+                "optical" to listOf("optical", "eye test", "optometrist"),
+            )
+
+        for (row in table.rows) {
+            if (row.isEmpty()) continue
+            val rowText = row.joinToString(" ").lowercase()
+
+            for ((copaymentType, keywords) in copaymentTypePatterns) {
+                if (keywords.any { rowText.contains(it) } && !copayments.containsKey(copaymentType)) {
+                    for (cell in row) {
+                        val amount = extractCopaymentAmountFromCell(cell)
+                        if (amount != null) {
+                            copayments[copaymentType] = amount
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        return copayments
+    }
+
+    // ==================== FALLBACK: REGEX-BASED EXTRACTION ====================
+
+    private fun extractContributionsFromPdfFallback(
+        pdfPath: String,
+        plan: Plan,
+    ): List<Contribution> {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
-        val text = pdfDoc.use { doc ->
-            val stripper = PDFTextStripper()
-            stripper.getText(doc)
-        }
+        val text =
+            pdfDoc.use { doc ->
+                val stripper = PDFTextStripper()
+                stripper.getText(doc)
+            }
 
         val contributions = mutableListOf<Contribution>()
         val lines = text.lines()
@@ -313,40 +635,47 @@ open class PlanDataService(
         for (line in lines) {
             val principalMatch = extractContributionAmount(line, listOf("principal", "main member"))
             if (principalMatch != null && contributions.none { it.memberType == MemberType.PRINCIPAL }) {
-                contributions.add(Contribution(
-                    plan = plan,
-                    memberType = MemberType.PRINCIPAL,
-                    monthlyAmount = principalMatch,
-                    conditions = "Extracted from PDF"
-                ))
+                contributions.add(
+                    Contribution(
+                        plan = plan,
+                        memberType = MemberType.PRINCIPAL,
+                        monthlyAmount = principalMatch,
+                        conditions = "Extracted from PDF",
+                    ),
+                )
             }
 
             val spouseMatch = extractContributionAmount(line, listOf("spouse", "partner", "adult dependent"))
             if (spouseMatch != null && contributions.none { it.memberType == MemberType.SPOUSE }) {
-                contributions.add(Contribution(
-                    plan = plan,
-                    memberType = MemberType.SPOUSE,
-                    monthlyAmount = spouseMatch,
-                    conditions = "Extracted from PDF"
-                ))
+                contributions.add(
+                    Contribution(
+                        plan = plan,
+                        memberType = MemberType.SPOUSE,
+                        monthlyAmount = spouseMatch,
+                        conditions = "Extracted from PDF",
+                    ),
+                )
             }
 
             val childMatch = extractContributionAmount(line, listOf("child", "children"))
             if (childMatch != null) {
                 val childNum = contributions.count { it.memberType.name.startsWith("CHILD") }
-                val memberType = when (childNum) {
-                    0 -> MemberType.CHILD_FIRST
-                    1 -> MemberType.CHILD_SECOND
-                    2 -> MemberType.CHILD_THIRD
-                    3 -> MemberType.CHILD_FOURTH
-                    else -> MemberType.CHILD_FIFTH_OR_MORE
-                }
-                contributions.add(Contribution(
-                    plan = plan,
-                    memberType = memberType,
-                    monthlyAmount = childMatch,
-                    conditions = "Extracted from PDF"
-                ))
+                val memberType =
+                    when (childNum) {
+                        0 -> MemberType.CHILD_FIRST
+                        1 -> MemberType.CHILD_SECOND
+                        2 -> MemberType.CHILD_THIRD
+                        3 -> MemberType.CHILD_FOURTH
+                        else -> MemberType.CHILD_FIFTH_OR_MORE
+                    }
+                contributions.add(
+                    Contribution(
+                        plan = plan,
+                        memberType = memberType,
+                        monthlyAmount = childMatch,
+                        conditions = "Extracted from PDF",
+                    ),
+                )
             }
         }
 
@@ -354,27 +683,32 @@ open class PlanDataService(
         return contributions
     }
 
-    private fun extractHospitalBenefitsFromPdf(pdfPath: String, plan: Plan): List<HospitalBenefit> {
+    private fun extractHospitalBenefitsFromPdfFallback(
+        pdfPath: String,
+        plan: Plan,
+    ): List<HospitalBenefit> {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
-        val text = pdfDoc.use { doc ->
-            val stripper = PDFTextStripper()
-            stripper.getText(doc)
-        }
+        val text =
+            pdfDoc.use { doc ->
+                val stripper = PDFTextStripper()
+                stripper.getText(doc)
+            }
 
         val benefits = mutableListOf<HospitalBenefit>()
         val lines = text.lines()
 
-        val benefitPatterns = mapOf(
-            BenefitCategory.HOSPITAL_COVER to listOf("hospital", "in-hospital", "hospitalization"),
-            BenefitCategory.CHRONIC_MEDICINE to listOf("chronic", "chronic medicine", "cdl"),
-            BenefitCategory.SPECIALIST_CONSULTATION to listOf("specialist", "consultation", "doctor"),
-            BenefitCategory.EMERGENCY_SERVICE to listOf("emergency", "accident", "casualty"),
-            BenefitCategory.MATERNITY to listOf("maternity", "pregnancy", "birth"),
-            BenefitCategory.DENTAL to listOf("dental", "teeth"),
-            BenefitCategory.OPTICAL to listOf("optical", "glasses", "lens", "eye"),
-            BenefitCategory.PRESCRIBED_MINIMUM_BENEFITS to listOf("pmb", "prescribed", "minimum benefits")
-        )
+        val benefitPatterns =
+            mapOf(
+                BenefitCategory.HOSPITAL_COVER to listOf("hospital", "in-hospital", "hospitalization"),
+                BenefitCategory.CHRONIC_MEDICINE to listOf("chronic", "chronic medicine", "cdl"),
+                BenefitCategory.SPECIALIST_CONSULTATION to listOf("specialist", "consultation", "doctor"),
+                BenefitCategory.EMERGENCY_SERVICE to listOf("emergency", "accident", "casualty"),
+                BenefitCategory.MATERNITY to listOf("maternity", "pregnancy", "birth"),
+                BenefitCategory.DENTAL to listOf("dental", "teeth"),
+                BenefitCategory.OPTICAL to listOf("optical", "glasses", "lens", "eye"),
+                BenefitCategory.PRESCRIBED_MINIMUM_BENEFITS to listOf("pmb", "prescribed", "minimum benefits"),
+            )
 
         for (line in lines) {
             val lowerLine = line.lowercase()
@@ -384,17 +718,19 @@ open class PlanDataService(
                     val limit = extractLimitAmount(line)
 
                     if (!benefits.any { it.category == category }) {
-                        benefits.add(HospitalBenefit(
-                            plan = plan,
-                            category = category,
-                            benefitName = extractBenefitName(line),
-                            limitPerFamily = limit?.familyLimit,
-                            limitPerPerson = limit?.personLimit,
-                            annualLimit = limit?.annualLimit,
-                            covered = true,
-                            notes = "Extracted from PDF",
-                            conditions = null
-                        ))
+                        benefits.add(
+                            HospitalBenefit(
+                                plan = plan,
+                                category = category,
+                                benefitName = extractBenefitName(line),
+                                limitPerFamily = limit?.familyLimit,
+                                limitPerPerson = limit?.personLimit,
+                                annualLimit = limit?.annualLimit,
+                                covered = true,
+                                notes = "Extracted from PDF",
+                                conditions = null,
+                            ),
+                        )
                     }
                 }
             }
@@ -404,26 +740,31 @@ open class PlanDataService(
         return benefits
     }
 
-    private fun extractCopaymentsFromPdf(pdfPath: String, plan: Plan): Map<String, Double> {
+    private fun extractCopaymentsFromPdfFallback(
+        pdfPath: String,
+        plan: Plan,
+    ): Map<String, Double> {
         val file = File(pdfPath)
         val pdfDoc = Loader.loadPDF(file)
-        val text = pdfDoc.use { doc ->
-            val stripper = PDFTextStripper()
-            stripper.getText(doc)
-        }
+        val text =
+            pdfDoc.use { doc ->
+                val stripper = PDFTextStripper()
+                stripper.getText(doc)
+            }
 
         val copayments = mutableMapOf<String, Double>()
         val lines = text.lines()
 
-        val copaymentPatterns = mapOf(
-            "gp_consultation" to listOf("gp consultation", "general practitioner", "doctor visit"),
-            "specialist_consultation" to listOf("specialist consultation", "specialist visit"),
-            "acute_medicine" to listOf("acute medicine", "prescribed medicine"),
-            "radiology" to listOf("radiology", "x-ray", "scan"),
-            "pathology" to listOf("pathology", "blood test", "lab test"),
-            "dental" to listOf("dental consultation", "dentist"),
-            "optical" to listOf("optical", "eye test", "optometrist")
-        )
+        val copaymentPatterns =
+            mapOf(
+                "gp_consultation" to listOf("gp consultation", "general practitioner", "doctor visit"),
+                "specialist_consultation" to listOf("specialist consultation", "specialist visit"),
+                "acute_medicine" to listOf("acute medicine", "prescribed medicine"),
+                "radiology" to listOf("radiology", "x-ray", "scan"),
+                "pathology" to listOf("pathology", "blood test", "lab test"),
+                "dental" to listOf("dental consultation", "dentist"),
+                "optical" to listOf("optical", "eye test", "optometrist"),
+            )
 
         for (line in lines) {
             val lowerLine = line.lowercase()
@@ -442,7 +783,51 @@ open class PlanDataService(
         return copayments
     }
 
-    fun extractContributionAmount(line: String, keywords: List<String>): Double? {
+    // ==================== HELPER METHODS ====================
+
+    private fun parseCellRandAmount(cell: String): Double? {
+        if (cell.isBlank()) return null
+        val amountPattern = Pattern.compile("R\\s*(\\d{1,5}(?:[\\s,.]\\d{3})*(?:\\.\\d{2})?)")
+        val matcher = amountPattern.matcher(cell)
+        if (matcher.find()) {
+            return try {
+                val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
+                val amount = BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
+                if (amount in MIN_VALID_CONTRIBUTION..MAX_VALID_CONTRIBUTION) amount else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+        return null
+    }
+
+    private fun extractLimitFromCells(cells: List<String>): LimitInfo? {
+        for (cell in cells) {
+            val limit = extractLimitAmount(cell)
+            if (limit != null) return limit
+        }
+        return null
+    }
+
+    private fun extractCopaymentAmountFromCell(cell: String): Double? {
+        if (cell.isBlank()) return null
+        val amountPattern = Pattern.compile("R\\s*(\\d{1,4}(?:[\\s,.]\\d{3})*(?:\\.\\d{2})?)")
+        val matcher = amountPattern.matcher(cell)
+        if (matcher.find()) {
+            return try {
+                val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
+                BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
+            } catch (e: Exception) {
+                null
+            }
+        }
+        return null
+    }
+
+    fun extractContributionAmount(
+        line: String,
+        keywords: List<String>,
+    ): Double? {
         val lowerLine = line.lowercase()
         if (keywords.none { lowerLine.contains(it) }) return null
 
@@ -498,7 +883,7 @@ open class PlanDataService(
                 LimitInfo(
                     familyLimit = if (perType.contains("family")) amount.toString() else null,
                     personLimit = if (perType.contains("person") || perType == "p/a") amount.toString() else null,
-                    annualLimit = if (perType == "p/a") "Annually: ${amount.toString()}" else null
+                    annualLimit = if (perType == "p/a") "Annually: $amount" else null,
                 )
             } catch (e: Exception) {
                 log.warn("Failed to parse limit: $line", e)
@@ -510,11 +895,12 @@ open class PlanDataService(
     }
 
     private fun extractMsaPercentage(text: String): Double? {
-        val patterns = listOf(
-            "(\\d+)%?\\s*(?:of|from)\\s*(?:contribution|premium)".toRegex(),
-            "(?:msa|savings)\\s*(?:is)?\\s*(\\d+)%".toRegex(),
-            "(\\d+)%\\s*(?:msa|medical savings|savings account)".toRegex()
-        )
+        val patterns =
+            listOf(
+                "(\\d+)%?\\s*(?:of|from)\\s*(?:contribution|premium)".toRegex(),
+                "(?:msa|savings)\\s*(?:is)?\\s*(\\d+)%".toRegex(),
+                "(\\d+)%\\s*(?:msa|medical savings|savings account)".toRegex(),
+            )
 
         for (pattern in patterns) {
             val match = pattern.find(text)
@@ -535,50 +921,49 @@ open class PlanDataService(
         }
     }
 
-    private fun extractBenefitName(line: String): String {
-        return line
+    private fun extractBenefitName(line: String): String =
+        line
             .replace("R\\s*\\d+[\\s,.\\d]*\\d*".toRegex(), "")
             .replace("per\\s+(family|person|p[/a])".toRegex(), "")
             .replace("\\s+".toRegex(), " ")
             .trim()
             .takeIf { it.isNotEmpty() } ?: "Benefit"
-    }
 
-    private fun buildHospitalBenefitsSummary(benefits: List<HospitalBenefit>): String {
-        return benefits.joinToString("\n") { benefit ->
-            "${benefit.category.name}: ${benefit.limitPerPerson ?: benefit.limitPerFamily ?: "No limit specified"}"
-        }.take(4000)
-    }
+    private fun buildHospitalBenefitsSummary(benefits: List<HospitalBenefit>): String =
+        benefits
+            .joinToString("\n") { benefit ->
+                "${benefit.category.name}: ${benefit.limitPerPerson ?: benefit.limitPerFamily ?: "No limit specified"}"
+            }.take(4000)
 }
 
 data class ContributionParseResult(
     val success: Boolean,
     val planId: UUID,
     val contributionsExtracted: Int,
-    val contributions: List<Contribution> = emptyList()
+    val contributions: List<Contribution> = emptyList(),
 )
 
 data class HospitalBenefitParseResult(
     val success: Boolean,
     val planId: UUID,
     val benefitsExtracted: Int,
-    val benefits: List<HospitalBenefit> = emptyList()
+    val benefits: List<HospitalBenefit> = emptyList(),
 )
 
 data class CopaymentParseResult(
     val success: Boolean,
     val planId: UUID,
     val copaymentsExtracted: Int,
-    val copayments: Map<String, Double> = emptyMap()
+    val copayments: Map<String, Double> = emptyMap(),
 )
 
 data class MsaInfo(
     val hasMedicalSavingsAccount: Boolean,
-    val msaPercentage: Double? = null
+    val msaPercentage: Double? = null,
 )
 
 data class LimitInfo(
     val familyLimit: String?,
     val personLimit: String?,
-    val annualLimit: String?
+    val annualLimit: String?,
 )
