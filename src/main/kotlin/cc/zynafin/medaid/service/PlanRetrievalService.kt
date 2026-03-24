@@ -4,10 +4,10 @@ import cc.zynafin.medaid.domain.extraction.SectionExtractionResult
 import cc.zynafin.medaid.domain.extraction.SourceCitation
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.stereotype.Service
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.client.RestTemplate
 import java.sql.ResultSet
 
@@ -19,7 +19,7 @@ open class PlanRetrievalService(
     @Value("\${medaid.extraction.similarity-threshold:0.65}")
     private val similarityThreshold: Double,
     @Value("\${OLLAMA_BASE_URL:http://localhost:11434}")
-    private val ollamaBaseUrl: String
+    private val ollamaBaseUrl: String,
 ) {
     private val log = LoggerFactory.getLogger(PlanRetrievalService::class.java)
     private val objectMapper = ObjectMapper()
@@ -29,36 +29,61 @@ open class PlanRetrievalService(
         val id: String,
         val content: String,
         val metadata: Map<String, Any>,
-        val distance: Double
+        val distance: Double,
     )
 
-    private val docResultMapper = RowMapper { rs: ResultSet, _: Int ->
-        val id = rs.getString("id")
-        val content = rs.getString("content")
-        val metadataJson = rs.getString("metadata")
-        val distance = rs.getDouble("distance")
-        val metadata = objectMapper.readValue(metadataJson, Map::class.java) as Map<String, Any>
-        DocResult(id, content, metadata, distance)
-    }
+    private val docResultMapper =
+        RowMapper { rs: ResultSet, _: Int ->
+            val id = rs.getString("id")
+            val content = rs.getString("content")
+            val metadataJson = rs.getString("metadata")
+            val distance = rs.getDouble("distance")
+            val metadata = objectMapper.readValue(metadataJson, Map::class.java) as Map<String, Any>
+            DocResult(id, content, metadata, distance)
+        }
 
-    fun retrieveForMetadata(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
+    fun retrieveForMetadata(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): SectionExtractionResult<String> {
         val query = buildMetadataQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "metadata", preferTableProse = false)
+        return retrieveRelevantChunks(query, scheme, planName, year, "metadata", preferTableMarkdown = false)
     }
 
-    fun retrieveForContributions(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
+    fun retrieveForContributions(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): SectionExtractionResult<String> {
         val query = buildContributionsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "contributions", preferTableProse = true, tableOrigin = "contribution")
+        return retrieveRelevantChunks(
+            query,
+            scheme,
+            planName,
+            year,
+            "contributions",
+            preferTableMarkdown = true,
+            tableType = "CONTRIBUTION",
+        )
     }
 
-    fun retrieveForBenefits(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
+    fun retrieveForBenefits(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): SectionExtractionResult<String> {
         val query = buildBenefitsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "benefits", preferTableProse = true, tableOrigin = "benefit")
+        return retrieveRelevantChunks(query, scheme, planName, year, "benefits", preferTableMarkdown = true, tableType = "BENEFIT")
     }
 
-    fun retrieveForCopayments(scheme: String, planName: String, year: Int): SectionExtractionResult<String> {
+    fun retrieveForCopayments(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): SectionExtractionResult<String> {
         val query = buildCopaymentsQuery(scheme, planName, year)
-        return retrieveRelevantChunks(query, scheme, planName, year, "copayments", preferTableProse = true, tableOrigin = "copayment")
+        return retrieveRelevantChunks(query, scheme, planName, year, "copayments", preferTableMarkdown = true, tableType = "COPAYMENT")
     }
 
     private fun retrieveRelevantChunks(
@@ -67,12 +92,12 @@ open class PlanRetrievalService(
         planName: String,
         year: Int,
         section: String,
-        preferTableProse: Boolean = false,
-        tableOrigin: String? = null
+        preferTableMarkdown: Boolean = false,
+        tableType: String? = null,
     ): SectionExtractionResult<String> {
         return try {
             val embedding = generateEmbedding(query)
-            
+
             if (embedding == null) {
                 log.error("Failed to generate embedding for query: $query")
                 return SectionExtractionResult(
@@ -80,29 +105,32 @@ open class PlanRetrievalService(
                     confidence = 0.0,
                     sourceChunks = emptyList(),
                     retryAttempts = 0,
-                    errorMessage = "Failed to generate embedding"
+                    errorMessage = "Failed to generate embedding",
                 )
             }
-            
+
             // Convert embedding to PostgreSQL vector string format
             val embeddingVector = embedding.joinToString(",", prefix = "[", postfix = "]")
-            
-            log.debug("Executing retrieval SQL for scheme=$scheme, planName=$planName, year=$year, section=$section, preferTableProse=$preferTableProse, tableOrigin=$tableOrigin")
-            
-            // If we prefer table_prose chunks, try that first
-            if (preferTableProse) {
-                val tableProseResults = tryRetrieveWithTableFilter(embeddingVector, scheme, planName, year, tableOrigin)
-                
-                if (tableProseResults.isNotEmpty()) {
-                    log.info("Found ${tableProseResults.size} table_prose chunks for section=$section")
-                    return buildResult(tableProseResults, section)
+
+            log.debug(
+                "Executing retrieval SQL for scheme=$scheme, planName=$planName, year=$year, section=$section, preferTableMarkdown=$preferTableMarkdown, tableType=$tableType",
+            )
+
+            // If we prefer table_markdown chunks, try that first
+            if (preferTableMarkdown) {
+                val tableMarkdownResults = tryRetrieveWithTableFilter(embeddingVector, scheme, planName, year, tableType)
+
+                if (tableMarkdownResults.isNotEmpty()) {
+                    log.info("Found ${tableMarkdownResults.size} table_markdown chunks for section=$section")
+                    return buildResult(tableMarkdownResults, section)
                 }
-                
-                log.debug("No table_prose chunks found for section=$section, falling back to all chunks")
+
+                log.debug("No table_markdown chunks found for section=$section, falling back to all chunks")
             }
-            
+
             // Fallback: retrieve all chunks without chunk_type filter
-            val sql = """
+            val sql =
+                """
                 SELECT id, content, metadata, embedding <=> (?::vector) as distance
                 FROM vector_store
                 WHERE metadata->>'scheme' = ?
@@ -110,17 +138,18 @@ open class PlanRetrievalService(
                   AND (metadata->>'year')::int = ?
                 ORDER BY embedding <=> (?::vector)
                 LIMIT ?
-            """.trimIndent()
-            
+                """.trimIndent()
+
             log.debug("Executing fallback SQL with params: scheme=$scheme, planName=$planName, year=$year, topK=$topK")
-            
-            val results = try {
-                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
-            } catch (e: Exception) {
-                log.error("SQL execution error: ${e.message}", e)
-                emptyList()
-            }
-            
+
+            val results =
+                try {
+                    jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
+                } catch (e: Exception) {
+                    log.error("SQL execution error: ${e.message}", e)
+                    emptyList()
+                }
+
             if (results.isEmpty()) {
                 log.warn("No relevant chunks found for section=$section query=$query")
                 return SectionExtractionResult(
@@ -128,10 +157,10 @@ open class PlanRetrievalService(
                     confidence = 0.0,
                     sourceChunks = emptyList(),
                     retryAttempts = 0,
-                    errorMessage = "No relevant chunks found for $section"
+                    errorMessage = "No relevant chunks found for $section",
                 )
             }
-            
+
             buildResult(results, section)
         } catch (e: Exception) {
             log.error("Failed to retrieve chunks for section=$section", e)
@@ -140,69 +169,69 @@ open class PlanRetrievalService(
                 confidence = 0.0,
                 sourceChunks = emptyList(),
                 retryAttempts = 0,
-                errorMessage = "Error retrieving chunks: ${e.message}"
+                errorMessage = "Error retrieving chunks: ${e.message}",
             )
         }
     }
-    
-    /**
-     * Try to retrieve chunks with table_prose filter.
-     * Optionally filter by table_origin (contribution, benefit, copayment).
-     */
+
     private fun tryRetrieveWithTableFilter(
         embeddingVector: String,
         scheme: String,
         planName: String,
         year: Int,
-        tableOrigin: String?
+        tableType: String?,
     ): List<DocResult> {
-        // Build SQL with chunk_type filter
-        val baseSql = """
+        val baseSql =
+            """
             SELECT id, content, metadata, embedding <=> (?::vector) as distance
             FROM vector_store
             WHERE metadata->>'scheme' = ?
               AND metadata->>'plan_name' = ?
               AND (metadata->>'year')::int = ?
-              AND metadata->>'chunk_type' = 'table_prose'
-        """.trimIndent()
-        
-        // Add table_origin filter if specified
-        val sql = if (tableOrigin != null) {
-            """
+              AND metadata->>'chunk_type' = 'table_markdown'
+            """.trimIndent()
+
+        val sql =
+            if (tableType != null) {
+                """
                 $baseSql
-                AND metadata->>'table_origin' = ?
+                AND metadata->>'table_type' = ?
                 ORDER BY embedding <=> (?::vector)
                 LIMIT ?
-            """.trimIndent()
-        } else {
-            """
+                """.trimIndent()
+            } else {
+                """
                 $baseSql
                 ORDER BY embedding <=> (?::vector)
                 LIMIT ?
-            """.trimIndent()
-        }
-        
+                """.trimIndent()
+            }
+
         return try {
-            if (tableOrigin != null) {
-                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, tableOrigin, embeddingVector, topK)
+            if (tableType != null) {
+                jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, tableType, embeddingVector, topK)
             } else {
                 jdbcTemplate.query(sql, docResultMapper, embeddingVector, scheme, planName, year, embeddingVector, topK)
             }
         } catch (e: Exception) {
-            log.debug("No table_prose chunks found with table_origin=$tableOrigin: ${e.message}")
+            log.debug("No table_markdown chunks found with table_type=$tableType: ${e.message}")
             emptyList()
         }
     }
-    
-    private fun buildResult(results: List<DocResult>, section: String): SectionExtractionResult<String> {
-        val sourceChunks = results.map { doc ->
-            SourceCitation(
-                chunkId = doc.id,
-                content = doc.content,
-                pageNumber = doc.metadata["page_number"] as? Int ?: 0,
-                similarityScore = doc.distance
-            )
-        }
+
+    private fun buildResult(
+        results: List<DocResult>,
+        section: String,
+    ): SectionExtractionResult<String> {
+        val sourceChunks =
+            results.map { doc ->
+                SourceCitation(
+                    chunkId = doc.id,
+                    content = doc.content,
+                    pageNumber = doc.metadata["page_number"] as? Int ?: 0,
+                    similarityScore = doc.distance,
+                )
+            }
 
         val combinedContent = results.joinToString("\n\n") { it.content }
         val avgDistance = results.map { it.distance }.average()
@@ -214,95 +243,91 @@ open class PlanRetrievalService(
             confidence = 1.0 - avgDistance,
             sourceChunks = sourceChunks,
             retryAttempts = 0,
-            errorMessage = null
+            errorMessage = null,
         )
     }
 
-    private fun generateEmbedding(text: String): List<Double>? {
-        return try {
-            val request = mapOf(
-                "model" to "nomic-embed-text",
-                "prompt" to text
-            )
-            
-            val response = restTemplate.postForObject(
-                "$ollamaBaseUrl/api/embeddings",
-                request,
-                Map::class.java
-            )
-            
+    private fun generateEmbedding(text: String): List<Double>? =
+        try {
+            val request =
+                mapOf(
+                    "model" to "nomic-embed-text",
+                    "prompt" to text,
+                )
+
+            val response =
+                restTemplate.postForObject(
+                    "$ollamaBaseUrl/api/embeddings",
+                    request,
+                    Map::class.java,
+                )
+
             @Suppress("UNCHECKED_CAST")
             response?.get("embedding") as? List<Double>
         } catch (e: Exception) {
             log.error("Error generating embedding", e)
             null
         }
-    }
 
-    private fun buildMetadataQuery(scheme: String, planName: String, year: Int): String {
-        return """
-            Extract plan metadata including:
-            - Plan name: $planName
-            - Scheme: $scheme
-            - Plan year: $year
-            - Plan type (Network, Comprehensive, Savings, Hospital, Cap)
-            - Network type
-            - Summary or overview of the plan
-            - Any key features or highlights
+    private fun buildMetadataQuery(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): String =
+        """
+        Extract plan metadata including:
+        - Plan name: $planName
+        - Scheme: $scheme
+        - Plan year: $year
+        - Plan type (Network, Comprehensive, Savings, Hospital, Cap)
+        - Network type
+        - Summary or overview of the plan
+        - Any key features or highlights
 
-            Return the exact plan name, scheme, year, and type as stated in the document.
+        Return the exact plan name, scheme, year, and type as stated in the document.
         """.trimIndent()
-    }
 
-    private fun buildContributionsQuery(scheme: String, planName: String, year: Int): String {
-        return """
-            Extract contribution amounts from the plan document for:
-            - Scheme: $scheme
-            - Plan: $planName
-            - Year: $year
-
-            Look for contribution tables showing monthly amounts for:
-            - Principal member
-            - Adult dependent
-            - Child dependent
-            - Any other member categories
-
-            Extract all contribution amounts mentioned, including specific values for each member type.
-            If a table is present, extract all rows with their amounts.
+    private fun buildContributionsQuery(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): String =
+        """
+        Monthly contribution amounts for $scheme $planName plan $year:
+        - Principal member monthly contribution amount
+        - Adult dependent monthly contribution amount
+        - Child dependent monthly contribution amount
+        - Network option contribution rates
+        - All Rand amounts in contribution table
         """.trimIndent()
-    }
 
-    private fun buildBenefitsQuery(scheme: String, planName: String, year: Int): String {
-        return """
-            Extract benefit information from the plan document for:
-            - Scheme: $scheme
-            - Plan: $planName
-            - Year: $year
-
-            Focus on:
-            - Hospital benefits (what's covered, co-insurance, network)
-            - Chronic benefits (CDL, chronic medication, chronic conditions)
-            - Day-to-day benefits (GP visits, dentistry, optometry)
-            - Network providers (which doctors/hospitals are covered)
-            - Any other key benefits mentioned
-
-            Extract specific coverage details, limits, and conditions.
+    private fun buildBenefitsQuery(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): String =
+        """
+        Hospital benefit coverage limits for $scheme $planName plan $year:
+        - Hospital admission benefit limit
+        - Specialist consultation coverage
+        - Chronic condition benefit
+        - Day-to-day benefit limit
+        - Network provider coverage
+        - Annual benefit limits and sub-limits
         """.trimIndent()
-    }
 
-    private fun buildCopaymentsQuery(scheme: String, planName: String, year: Int): String {
-        return """
-            Copayment amounts for Discovery Health $planName plan $year:
-            - Hospital admission copayments, theatre fees
-            - Specialist and GP consultation copayments  
-            - Chronic medication copayments
-            - Day-to-day benefit copayments
-            - Any deductibles, excess charges, or levies
-            - Network vs non-network copayment differences
-            - Maternity copayments (normal delivery vs cesarean)
-            - Scope procedures copayments
-            - Cancer treatment copayments
-            - All rand amounts and percentage copayments
+    private fun buildCopaymentsQuery(
+        scheme: String,
+        planName: String,
+        year: Int,
+    ): String =
+        """
+        Copayment amounts and fees for $scheme $planName plan $year:
+        - Hospital admission copayment fee
+        - Specialist consultation copayment
+        - Chronic medication copayment
+        - Day-to-day benefit copayment
+        - Network vs non-network copayment difference
+        - All copayment Rand amounts and percentages
         """.trimIndent()
-    }
 }
