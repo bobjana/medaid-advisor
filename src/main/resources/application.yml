@@ -51,7 +51,7 @@ spring:
     vectorstore:
       pgvector:
         dimension: 768  # nomic-embed-text dimension
-        index-type: ivfflat
+        index-type: hnsw
         distance-type: COSINE_DISTANCE
         initialize-schema: true
 
@@ -90,7 +90,7 @@ medaid:
       risk: 0.15
   extraction:
     agentic-enabled: true
-    similarity-threshold: 0.0
+    similarity-threshold: 0.3
     confidence-threshold-local: 0.75
     confidence-threshold-review: 0.6
     local-threshold: 0.75
