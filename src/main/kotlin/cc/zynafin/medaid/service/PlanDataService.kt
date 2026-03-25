@@ -795,6 +795,7 @@ open class PlanDataService(
                 val amount = BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
                 if (amount in MIN_VALID_CONTRIBUTION..MAX_VALID_CONTRIBUTION) amount else null
             } catch (e: Exception) {
+                log.debug("Failed to parse rand amount from cell '{}': {}", cell, e.message)
                 null
             }
         }
@@ -818,6 +819,7 @@ open class PlanDataService(
                 val amountStr = matcher.group(1).replace("[\\s,]".toRegex(), "")
                 BigDecimal(amountStr).setScale(2, RoundingMode.HALF_UP).toDouble()
             } catch (e: Exception) {
+                log.debug("Failed to parse copayment amount from cell '{}': {}", cell, e.message)
                 null
             }
         }
@@ -928,12 +930,6 @@ open class PlanDataService(
             .replace("\\s+".toRegex(), " ")
             .trim()
             .takeIf { it.isNotEmpty() } ?: "Benefit"
-
-    private fun buildHospitalBenefitsSummary(benefits: List<HospitalBenefit>): String =
-        benefits
-            .joinToString("\n") { benefit ->
-                "${benefit.category.name}: ${benefit.limitPerPerson ?: benefit.limitPerFamily ?: "No limit specified"}"
-            }.take(4000)
 }
 
 data class ContributionParseResult(

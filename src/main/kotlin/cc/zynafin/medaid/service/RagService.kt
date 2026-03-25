@@ -312,11 +312,12 @@ open class RagService(
         }
 
         val pdfFiles =
-            Files
-                .list(dir)
-                .filter { it.toString().endsWith(".pdf", ignoreCase = true) }
-                .sorted()
-                .toList()
+            Files.list(dir).use { stream ->
+                stream
+                    .filter { it.toString().endsWith(".pdf", ignoreCase = true) }
+                    .sorted()
+                    .toList()
+            }
 
         log.info("Found ${pdfFiles.size} PDF files in $directoryPath")
 
@@ -367,6 +368,7 @@ open class RagService(
         val duration = System.currentTimeMillis() - startTime
         val tableChunks = allChunks.count { it.metadata["chunk_type"] == "table_markdown" }
         val proseChunks = allChunks.count { it.metadata["chunk_type"] == "text" }
+        val pagesProcessed = allChunks.mapNotNull { (it.metadata["page_number"] as? Number)?.toInt() }.toSet().size
 
         log.info("Ingested $filename: ${allChunks.size} chunks ($tableChunks table, $proseChunks prose) in ${duration}ms")
 
@@ -374,6 +376,7 @@ open class RagService(
             success = true,
             filename = filename,
             chunksCreated = allChunks.size,
+            pagesProcessed = pagesProcessed,
             durationMs = duration,
             metadata = metadata,
         )
