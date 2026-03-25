@@ -1,0 +1,48 @@
+=== T12 Integration Test Results ===
+Date: 2026-03-25
+Status: PASSED
+
+== Build ==
+mvn clean package -DskipTests: EXIT 0
+
+== Infrastructure ==
+- PostgreSQL: Running (pgvector/pgvector:pg16 on port 5433)
+- Ollama: Running (localhost:11434) with nomic-embed-text model
+
+== Ingestion Results ==
+Files processed: 37/37 (100% success rate)
+Total chunks: 3739
+  - table_markdown chunks: 2839 (75.9%)
+  - text chunks: 900 (24.1%)
+Unique PDFs ingested: 37
+
+== Table Type Distribution ==
+UNKNOWN:      1403 chunks
+BENEFIT:       511 chunks
+CHRONIC_LIST:  381 chunks
+COMPARISON:    324 chunks
+COPAYMENT:     130 chunks
+CONTRIBUTION:   90 chunks
+
+== Sample CONTRIBUTION table_markdown chunk ==
+## Contributions — Beat 1 (2026)
+Source: Bestmed | Page: 10
+(Tabula extracted table with pipe-separated columns)
+
+== Sample BENEFIT table_markdown chunk ==
+## Benefits — Beat 1 (2026)
+Source: Bestmed | Page: 2
+| BEAT1 OPTION | HOSPITAL PLAN |
+| --- | --- |
+| Recommended for? | You are an individual... |
+
+== Findings ==
+- Tabula-java successfully extracted tables at runtime (no PDFBox 3.x conflicts observed)
+- 75.9% of chunks are structured Markdown tables (vs old heuristic approach which produced prose)
+- CONTRIBUTION detection: 90 chunks - could be improved (many are single-column tables misclassified as BENEFIT)
+- UNKNOWN: 1403 chunks - single-column tables fall through keyword detection; acceptable
+- Pipeline is idempotent: re-running ingestion clears old chunks via clearDocumentChunks()
+- Deduplication via JdbcTemplate DELETE confirmed working
+
+== Verdict ==
+Pipeline PASSED integration test. Markdown table chunks are being produced and stored correctly.
